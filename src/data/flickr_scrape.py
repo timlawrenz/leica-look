@@ -250,8 +250,8 @@ def write_manifest(cls_name, manifest):
     return FlickrCache._write_csv(f"data/registry/{cls_name}_manifest.csv", manifest)
 
 
-def scrape_class(key, cls_name, config, cache):
-    manifest_path = f"data/registry/{cls_name}_manifest.csv"
+def scrape_class(key, cls_name, config, cache, out_path=None):
+    manifest_path = out_path or f"data/registry/{cls_name}_manifest.csv"
     os.makedirs("data/registry", exist_ok=True)
 
     # Resume from cache: seen photo IDs + per-lens counts carried forward
@@ -404,6 +404,7 @@ def main():
                     help="which class to scrape")
     ap.add_argument("--lens", action="append", default=None,
                     help="only scrape these lens labels (repeatable); default all")
+    ap.add_argument("--out", default=None, help="output manifest path override")
     ap.add_argument("--dry-run", action="store_true", help="validate config, no requests")
     args = ap.parse_args()
 
@@ -425,7 +426,7 @@ def main():
     cache = FlickrCache()
 
     print(f"Scraping [{args.cls}] — target {config['target']} photos")
-    manifest, matched = scrape_class(key, args.cls, config, cache)
+    manifest, matched = scrape_class(key, args.cls, config, cache, out_path=args.out)
     snapshot_counts(args.cls, matched, manifest)
     print("\nDone.")
 
