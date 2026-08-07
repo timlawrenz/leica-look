@@ -53,7 +53,7 @@ POSITIVE = {
         # label,            required_terms,                forbidden_terms
         ("Summilux 50/1.4", ["summilux", "50"],            ["apo", "28", "35", "75"]),
         ("Summilux 35/1.4", ["summilux", "35"],            ["apo", "28", "50", "75"]),
-        ("Summilux 28/1.4", ["summilux", "28"],            ["apo", "35", "50", "75"]),
+        ("Summilux 28/1.4", ["summilux", "28", "1.4"],      ["apo", "35", "50", "75", "1.7"]),
         ("APO-Summicron 50", ["apo-summicron", "50"],      ["28", "35", "75", "90"]),
         # Light Lens Lab 35mm f/1.4 ASPH "11873" — a modern M-mount remake of
         # the classic Leica Summilux-M 35mm f/1.4 ASPH. Captures the same
