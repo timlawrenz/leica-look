@@ -402,6 +402,8 @@ def main():
     ap = argparse.ArgumentParser(description="Flickr seed dataset scraper")
     ap.add_argument("--class", dest="cls", choices=list(CLASSES), default="positive",
                     help="which class to scrape")
+    ap.add_argument("--lens", action="append", default=None,
+                    help="only scrape these lens labels (repeatable); default all")
     ap.add_argument("--dry-run", action="store_true", help="validate config, no requests")
     args = ap.parse_args()
 
@@ -409,9 +411,18 @@ def main():
         dry_run()
         return
 
+    config = CLASSES[args.cls]
+    if args.lens:
+        # Filter to only the requested lens labels
+        config["lenses"] = [sig for sig in config["lenses"] if sig[0] in args.lens]
+        if not config["lenses"]:
+            print("ERROR: --lens matched no configured lens labels", file=sys.stderr)
+            sys.exit(2)
+        print(f"Restricted to {len(config['lenses'])} lens sig(s): "
+              f"{[s[0] for s in config['lenses']]}")
+
     key = load_api_key()
     cache = FlickrCache()
-    config = CLASSES[args.cls]
 
     print(f"Scraping [{args.cls}] — target {config['target']} photos")
     manifest, matched = scrape_class(key, args.cls, config, cache)
