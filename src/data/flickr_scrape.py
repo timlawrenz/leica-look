@@ -58,6 +58,7 @@ POSITIVE = {
     ],
     "target": 320,      # ~300-500 target for positive
     "per_lens_cap": 160,
+    "exclude_monochrome": True,   # Monochrom bodies are design-excluded
 }
 
 NEGATIVE = {
@@ -327,6 +328,22 @@ def scrape_class(key, cls_name, config, cache, out_path=None):
                         if lensmodel:
                             break
 
+                # Body from EXIF — needed now, both to detect monochrome bodies
+                # (excluded by design) and to record which camera took the shot.
+                body = body
+                for ex in (exif.get("photo", {}) or {}).get("exif", []):
+                    if ex.get("label") in ("Model", "Camera Model Name", "Camera"):
+                        raw = ex.get("raw")
+                        v = raw.get("_content", "") if isinstance(raw, dict) else (str(raw) if raw else "")
+                        if v:
+                            body = v
+                        break
+
+                # Skip monochrome bodies at scrape time (design-excluded signal).
+                # Avoids wasting EXIF/matching effort on photos we'll reject.
+                if config.get("exclude_monochrome", False) and "MONO" in body.upper():
+                    continue
+
                 match = None
                 for label, req, forbid in lens_sigs:
                     if lens_matches(lensmodel, (label, req, forbid)):
@@ -339,15 +356,6 @@ def scrape_class(key, cls_name, config, cache, out_path=None):
                     continue   # not a target lens
 
                 label, lensmodel = match
-                # body from EXIF Camera Model if available
-                body = body
-                for ex in (exif.get("photo", {}) or {}).get("exif", []):
-                    if ex.get("label") in ("Model", "Camera Model Name", "Camera"):
-                        raw = ex.get("raw")
-                        v = raw.get("_content", "") if isinstance(raw, dict) else (str(raw) if raw else "")
-                        if v:
-                            body = v
-                        break
 
                 raw_tags = photo.get("tags")
                 if isinstance(raw_tags, list):
