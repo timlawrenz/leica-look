@@ -2,6 +2,16 @@
 
 > Quantifying and transferring the Leica lens rendering look via deep learning.
 
+> 🤖 **AI agents**: stop here. Read `AGENTS.md` first for mandatory reading order and rules.
+
+## Quick Orientation
+
+- **Current status:** `PROJECT_STATUS.md` — Phase 1 CONCLUDED (PIVOT)
+- **What we know:** `docs/discriminator-results.md` — full Phase 1 results
+- **What's next:** `PROJECT_STATUS.md` — seed sweep, content-matching, attention analysis
+- **What's been done:** `docs/EXPERIMENT_TREE.md` + `docs/EXPERIMENTS_AND_RESULTS.md`
+- **How we work:** `docs/experiment-structure.md` — scientific governance
+
 ## The Question
 
 Can the distinctive visual rendering of Leica ASPH lenses — microcontrast, focus falloff, bokeh character, 3D "pop" — be quantified, learned, and applied to any photograph as a post-processing step?
@@ -42,9 +52,22 @@ leica-look/
 
 ## Status
 
-- [ ] Phase 1: Discriminator ablation study
-- [ ] Phase 2: LoRA training & img2img transfer
+- [x] Phase 1: Discriminator ablation study → **PIVOT** (see PROJECT_STATUS.md)
+- [ ] Phase 2: LoRA training & img2img transfer (blocked on content-confirm resolution)
 - [ ] Phase 3: Automated data engine
+
+## Core Documentation
+
+| Document | Role |
+|---|---|
+| `PROJECT_STATUS.md` | Living orientation — what's happening now |
+| `docs/discriminator-results.md` | Phase 1 full results & analysis |
+| `docs/EXPERIMENT_TREE.md` | Active/planned/concluded workstreams |
+| `docs/EXPERIMENTS_AND_RESULTS.md` | Permanent ledger with verdicts |
+| `docs/experiment-design.md` | Phase 1 ablation matrix design |
+| `docs/research-plan.md` | Full research plan |
+| `docs/literature-review.md` | Prior art |
+| `AGENTS.md` | AI agent entry point & rules |
 
 ## Hardware
 
