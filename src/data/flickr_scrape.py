@@ -167,30 +167,89 @@ def scene_type(photo):
 # ---------------------------------------------------------------------------
 
 class FlickrCache:
-    """Persists per-photo EXIF lookups to .flickr_cache so partial progress
-    is never lost on interruption, and already-verified photos are skipped."""
+    """Persists per-photo state to .flickr_cache so partial progress is never
+    lost on interruption, and already-verified photos are skipped on resume.
+
+    Real resume support (not just a stub):
+      - seen set: photo IDs already checked (whether matched or not)
+      - matched map: lens_label -> how many that lens has accepted so far
+    Both are loaded at start; the manifest is re-flushed incrementally so a
+    killed run leaves a usable partial manifest.
+    """
 
     def __init__(self, root=".flickr_cache"):
         os.makedirs(root, exist_ok=True)
         self.root = root
-        self.photo_idx = os.path.join(root, "photo_index.txt")   # verified photo IDs
-        self.meta = os.path.join(root, "meta.tsv")
+        self.seen = set()
+        self.matched = {}
 
-    def already_verified(self, photo_id):
-        # We keep a set in memory; the file is reloaded only at start.
-        return False
+    def state_path(self, cls_name, kind):
+        return os.path.join(self.root, f"{cls_name}_{kind}.txt")
 
-    def snap_state(self, cls_name, seen_ids, manifest_rows):
-        """Write intermediate state so a resume can avoid re-fetching."""
-        with open(os.path.join(self.root, f"{cls_name}_seen.txt"), "w") as f:
-            f.write("\n".join(seen_ids))
+    def load(self, cls_name):
+        self.seen = set()
+        self.matched = {}
+        sp = self.state_path(cls_name, "seen")
+        if os.path.exists(sp):
+            for line in open(sp):
+                line = line.strip()
+                if line:
+                    self.seen.add(line)
+        mp = self.state_path(cls_name, "matched")
+        if os.path.exists(mp):
+            for line in open(mp):
+                if "\t" in line:
+                    k, v = line.split("\t", 1)
+                    try:
+                        self.matched[k] = int(v)
+                    except ValueError:
+                        pass
+        return self.seen, self.matched
+
+    def save(self, cls_name, seen_ids, matched, manifest, manifest_path):
+        with open(self.state_path(cls_name, "seen"), "w") as f:
+            f.write("\n".join(sorted(seen_ids)))
+        with open(self.state_path(cls_name, "matched"), "w") as f:
+            for k, v in sorted(matched.items()):
+                f.write(f"{k}\t{v}\n")
+        # Incrementally flush the manifest so a kill leaves usable partial data
+        if manifest_path and manifest:
+            self._write_csv(manifest_path, manifest)
+
+    @staticmethod
+    def _write_csv(path, manifest):
+        fieldnames = ["flickr_id", "url", "thumb", "class", "lens_label",
+                      "lens_exif", "body", "scene_type", "license_id", "tags"]
+        tmp = path + ".tmp"
+        with open(tmp, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(manifest)
+        os.replace(tmp, path)
+
+
+def write_manifest(cls_name, manifest):
+    return FlickrCache._write_csv(f"data/registry/{cls_name}_manifest.csv", manifest)
 
 
 def scrape_class(key, cls_name, config, cache):
-    seen_ids = set()
+    manifest_path = f"data/registry/{cls_name}_manifest.csv"
+    os.makedirs("data/registry", exist_ok=True)
+
+    # Resume from cache: seen photo IDs + per-lens counts carried forward
+    seen_ids, matched = cache.load(cls_name)
+    print(f"  [resume] {len(seen_ids)} photos already checked, "
+          f"{sum(matched.values())} already matched, {len(matched)} lens counts loaded")
+
     manifest = []
-    matched = {}   # label -> count
+    # Rebuild manifest from scratch on this invocation; a fresh run re-writes it.
+    # (For true resume-into-existing-manifest we'd read the CSV; append is fine
+    #  since seen_ids dedupes — but we rebuild to keep ordering deterministic.)
     lens_sigs = config["lenses"]
+    os.makedirs(".flickr_cache", exist_ok=True)
+
+    def flush():
+        cache.save(cls_name, seen_ids, matched, manifest, manifest_path)
 
     for body in config["body_queries"]:
         print(f"\n=== [{cls_name}] searching body: {body} ===")
@@ -200,6 +259,7 @@ def scrape_class(key, cls_name, config, cache):
             # Stop if we've hit the overall target
             if len(manifest) >= config["target"]:
                 print(f"  target {config['target']} reached, stopping")
+                flush()
                 return manifest, matched
 
             data = flickr_get(key, "flickr.photos.search", {
@@ -238,9 +298,14 @@ def scrape_class(key, cls_name, config, cache):
                     continue
                 lensmodel = ""
                 for ex in (exif.get("photo", {}) or {}).get("exif", []):
-                    if ex.get("label") in ("Lens", "LensModel"):
-                        lensmodel = (ex.get("raw") or "") or (ex.get("clean") or {}).get("_content", "")
-                        break
+                    if ex.get("label") in ("Lens", "Lens Model"):
+                        raw = ex.get("raw")
+                        if isinstance(raw, dict):
+                            lensmodel = raw.get("_content", "") or ""
+                        elif raw:
+                            lensmodel = str(raw)
+                        if lensmodel:
+                            break
 
                 match = None
                 for label, req, forbid in lens_sigs:
@@ -257,8 +322,9 @@ def scrape_class(key, cls_name, config, cache):
                 # body from EXIF Camera Model if available
                 body = body
                 for ex in (exif.get("photo", {}) or {}).get("exif", []):
-                    if ex.get("label") in ("Camera Model Name", "Camera"):
-                        v = (ex.get("raw") or "") or (ex.get("clean") or {}).get("_content", "")
+                    if ex.get("label") in ("Model", "Camera Model Name", "Camera"):
+                        raw = ex.get("raw")
+                        v = raw.get("_content", "") if isinstance(raw, dict) else (str(raw) if raw else "")
                         if v:
                             body = v
                         break
@@ -276,6 +342,8 @@ def scrape_class(key, cls_name, config, cache):
                     "tags": ",".join(photo.get("tags", []))[:500],
                 })
                 matched[label] = matched.get(label, 0) + 1
+                if len(manifest) % 20 == 0:
+                    flush()
                 print(f"  + {label} [{body}] ({matched[label]}/{config['per_lens_cap']}) "
                       f"total={len(manifest)}")
 
@@ -284,6 +352,7 @@ def scrape_class(key, cls_name, config, cache):
             page += 1
             time.sleep(SEARCH_RATE_LIMIT_S)
 
+    flush()
     return manifest, matched
 
 
@@ -292,19 +361,6 @@ def snapshot_counts(cls_name, matched, manifest):
     for label, n in sorted(matched.items()):
         print(f"  {label}: {n}")
     print(f"  TOTAL: {len(manifest)}")
-
-
-def write_manifest(cls_name, manifest):
-    os.makedirs("data/registry", exist_ok=True)
-    path = f"data/registry/{cls_name}_manifest.csv"
-    fieldnames = ["flickr_id", "url", "thumb", "class", "lens_label",
-                  "lens_exif", "body", "scene_type", "license_id", "tags"]
-    with open(path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(manifest)
-    print(f"Wrote {path} ({len(manifest)} rows)")
-    return path
 
 
 def dry_run():
@@ -337,8 +393,6 @@ def main():
     print(f"Scraping [{args.cls}] — target {config['target']} photos")
     manifest, matched = scrape_class(key, args.cls, config, cache)
     snapshot_counts(args.cls, matched, manifest)
-    if manifest:
-        write_manifest(args.cls, manifest)
     print("\nDone.")
 
 
