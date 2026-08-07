@@ -45,16 +45,21 @@ For each model, extract:
 |---|---|
 | 50 | Floor — is the signal learnable at all? |
 | 100 | Practical minimum |
-| 200 | Expected sweet spot |
-| 500 | Upper bound — diminishing returns check |
+| 250 | Upper bound (capped by verified positive supply ≈ 271) |
+
+> **Note (2026-08-07):** the original `{50, 100, 200, 500}` sweep was narrowed to
+> `{50, 100, 250}` because the EXIF-verified positive class tops out at 271, so
+> the 500/class cell is unreachable. 250 is comfortably above the 200 "expected
+> sweet spot" and the ±SE analysis confirms 271/class gives decisively
+> separable AUC at the 0.80 gate.
 
 ## Full Experiment Grid
 
 ```
-7 models × 6 pooling × 3 classifiers × 4 dataset sizes = 504 combinations
+7 models × 6 pooling × 3 classifiers × 3 dataset sizes (50/100/250) = 378 combinations
 ```
 
-Embeddings are cached per model, so 504 evaluations complete in ~30 minutes once embeddings are computed. Embedding extraction: ~10–15 minutes for all models.
+Embeddings are cached per model, so 378 evaluations complete in ~30 minutes once embeddings are computed. Embedding extraction: ~10–15 minutes for all models.
 
 ## Stratification
 
