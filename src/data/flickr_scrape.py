@@ -113,6 +113,13 @@ def load_api_key():
     return key
 
 
+# Error messages that indicate a PERMANENT condition (retrying won't help).
+# For getExif, "Permission denied" means the photo's EXIF is restricted/private —
+# skip it immediately instead of burning retries + backoff on it.
+PERMANENT_ERROR_SUBSTR = ("permission denied", "not found", "no such photo",
+                          "photo_id invalid", "invalid api key")
+
+
 def flickr_get(key, method, params):
     params = {**params, "method": method, "api_key": key, "format": "json", "nojsoncallback": 1}
     for attempt in range(3):
@@ -120,8 +127,13 @@ def flickr_get(key, method, params):
             r = requests.get(SEARCH_URL, params=params, timeout=20)
             data = r.json()
             if data.get("stat") != "ok":
-                # soft failure — retry a couple times then abort
-                print(f"  flickr error ({method}): {data.get('message', 'unknown')}", file=sys.stderr)
+                msg = data.get("message", "unknown")
+                low = msg.lower()
+                if any(s in low for s in PERMANENT_ERROR_SUBSTR):
+                    # Permanent — do not retry. Return a marker so callers can
+                    # distinguish "skip this photo" from "transient failure".
+                    return {"stat": "error", "permanent": True, "message": msg}
+                print(f"  flickr error ({method}) attempt {attempt+1}: {msg}", file=sys.stderr)
                 time.sleep(2 * (attempt + 1))
                 continue
             return data
@@ -272,7 +284,7 @@ def scrape_class(key, cls_name, config, cache):
                 "content_type": 1,             # photos only
                 "extras": "tags,url_q",
             })
-            if data is None:
+            if data is None or data.get("permanent"):
                 query_failures += 1
                 if query_failures >= 3:
                     print("  aborting query (repeated API failures)", file=sys.stderr)
@@ -294,7 +306,9 @@ def scrape_class(key, cls_name, config, cache):
                 # Verify lens EXIF
                 exif = flickr_get(key, "flickr.photos.getExif", {"photo_id": pid})
                 time.sleep(EXIF_RATE_LIMIT_S)
-                if exif is None:
+                if exif is None or exif.get("permanent"):
+                    # None = transient failure (retry next photo); permanent =
+                    # EXIF restricted/private — skip instantly, no useful match
                     continue
                 lensmodel = ""
                 for ex in (exif.get("photo", {}) or {}).get("exif", []):
