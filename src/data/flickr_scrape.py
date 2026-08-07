@@ -55,6 +55,13 @@ POSITIVE = {
         ("Summilux 35/1.4", ["summilux", "35"],            ["apo", "28", "50", "75"]),
         ("Summilux 28/1.4", ["summilux", "28"],            ["apo", "35", "50", "75"]),
         ("APO-Summicron 50", ["apo-summicron", "50"],      ["28", "35", "75", "90"]),
+        # Light Lens Lab 35mm f/1.4 ASPH "11873" — a modern M-mount remake of
+        # the classic Leica Summilux-M 35mm f/1.4 ASPH. Captures the same
+        # "Leica look"; accept as positive. If 6-bit coded as the genuine
+        # Summilux it's caught by the rule above; this catches the uncoded/
+        # LLL-branded case. (Explicitly exclude genuine-Leica lookalike 50mm
+        # and non-35 focal lengths.)
+        ("LLL 35/1.4 (11873)", ["light lens lab", "35", "1.4"], ["50", "28", "75"]),
     ],
     "target": 320,      # ~300-500 target for positive
     "per_lens_cap": 160,
