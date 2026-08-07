@@ -47,3 +47,6 @@ Thumbs.db
 
 # Downloaded review thumbnails
 .flickr_cache/thumbs/
+
+# Generated review page
+review/
