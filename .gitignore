@@ -44,3 +44,6 @@ Thumbs.db
 # Environment
 .env
 *.env.local
+
+# Downloaded review thumbnails
+.flickr_cache/thumbs/
