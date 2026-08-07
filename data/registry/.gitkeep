@@ -1,0 +1,2 @@
+# Manifests (*.csv) are gitignored — this keepfile preserves the directory.
+# See src/data/flickr_scrape.py for how manifests are produced.

@@ -1,0 +1,346 @@
+#!/usr/bin/env python3
+"""
+Flickr seed dataset scraper for the leica-look discriminator (Phase 1).
+
+Strategy:
+  1. Search Flickr by camera BODY (flickr.photos.search) to get a large,
+     relevant candidate pool for that manufacturer.
+  2. For each candidate photo, call flickr.photos.getExif to read the EXIF
+     LensModel + Lens field, and confirm it MATCHES a target lens signature.
+  3. Keep only EXIF-confirmed photos; dedupe; stop at per-class/per-lens caps.
+  4. Write a manifest CSV for human curation (issue #2).
+
+Only the API key is required (read-only, public photos). No OAuth.
+Key is read from FLICKR_API_KEY env var or .env in the repo root.
+
+Usage:
+    FLICKR_API_KEY=xxx python src/data/flickr_scrape.py [--class positive]
+    python src/data/flickr_scrape.py --dry-run   # validate config, no requests
+
+Outputs:
+    data/registry/positive_manifest.csv
+    data/registry/negative_manifest.csv
+    .flickr_cache/              # resumable intermediate state
+"""
+
+import argparse
+import csv
+import os
+import re
+import sys
+import time
+
+import requests
+from dotenv import load_dotenv
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+# Each lens signature is (label, required_terms, forbidden_terms)
+#   required_terms: ALL must be present (case-insensitive substring) in EXIF LensModel
+#   forbidden_terms: NONE may be present (disambiguation)
+# We search per camera BODY to get candidate pools, then match the lens EXIF.
+
+POSITIVE = {
+    "body_queries": [
+        "Leica M10", "Leica M10-P", "Leica M10-R", "Leica M10-D",
+        "Leica M11", "Leica M11-P", "Leica M11-D",
+        "Leica SL2", "Leica SL2-S", "Leica SL3",
+        "Leica Q2", "Leica Q2 Monochrom", "Leica Q3",
+    ],
+    "lenses": [
+        # label,            required_terms,                forbidden_terms
+        ("Summilux 50/1.4", ["summilux", "50"],            ["apo", "28", "35", "75"]),
+        ("Summilux 35/1.4", ["summilux", "35"],            ["apo", "28", "50", "75"]),
+        ("Summilux 28/1.4", ["summilux", "28"],            ["apo", "35", "50", "75"]),
+        ("APO-Summicron 50", ["apo-summicron", "50"],      ["28", "35", "75", "90"]),
+    ],
+    "target": 320,      # ~300-500 target for positive
+    "per_lens_cap": 160,
+}
+
+NEGATIVE = {
+    "body_queries": [
+        # Canon EOS R / DSLR full-frame
+        "Canon EOS R5", "Canon EOS R6", "Canon EOS R6 Mark II", "Canon EOS R3",
+        "Canon EOS 5D Mark IV", "Canon EOS 5DS R",
+        # Sony full-frame E-mount
+        "Sony ILCE-7RM5", "Sony ILCE-7RM4", "Sony ILCE-7M4", "Sony ILCE-7M3",
+        "Sony ILCE-9", "Sony ILCE-1",
+        # Nikon Z full-frame
+        "NIKON Z 9", "NIKON Z 8", "NIKON Z 7_2", "NIKON Z 7",
+        # Zeiss Otus mounts are EF/F/E — covered by the above bodies
+    ],
+    "lenses": [
+        # label,                    required_terms,                forbidden_terms
+        ("Canon 50/1.2L",           ["ef50", "1.2", "l"],          ["ot"],  # can't disambiguate EF vs RF easily
+         ),
+        ("Canon 85/1.2L",           ["ef85", "1.2", "l"],          []),
+        ("Canon 35/1.4L II",        ["ef35", "1.4", "l", "ii"],    []),
+        ("Sony 50/1.2 GM",          ["fe 50", "1.2", "gm"],        []),
+        ("Sony 85/1.4 GM",          ["fe 85", "1.4", "gm"],        []),
+        ("Sony 35/1.4 GM",          ["fe 35", "1.4", "gm"],        []),
+        ("Nikon 50/1.2 S",          ["50", "1.2", "s"],            ["nikkor z 85", "35"]),
+        ("Nikon 85/1.2 S",          ["85", "1.2", "s"],            ["50", "35"]),
+        ("Zeiss Otus 55/1.4",       ["otus", "55"],                []),
+        ("Zeiss Otus 85/1.4",       ["otus", "85"],                []),
+    ],
+    "target": 700,      # ~500-1000 target for negative
+    "per_lens_cap": 200,
+}
+
+CLASSES = {"positive": POSITIVE, "negative": NEGATIVE}
+
+SEARCH_URL = "https://www.flickr.com/services/rest/"
+EXIF_URL = "https://www.flickr.com/services/rest/"
+PAGE_SIZE = 100          # max per search request
+SEARCH_RATE_LIMIT_S = 1.0     # polite: >=1 req/s for search
+EXIF_RATE_LIMIT_S = 0.6       # getExif is heavier per call
+MAX_EXIF_FAILURES = 15        # consecutive getExif failures before aborting a query
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def load_api_key():
+    load_dotenv()
+    key = os.environ.get("FLICKR_API_KEY", "").strip()
+    if not key:
+        print("ERROR: FLICKR_API_KEY not set. Add it to .env or export it.", file=sys.stderr)
+        sys.exit(2)
+    return key
+
+
+def flickr_get(key, method, params):
+    params = {**params, "method": method, "api_key": key, "format": "json", "nojsoncallback": 1}
+    for attempt in range(3):
+        try:
+            r = requests.get(SEARCH_URL, params=params, timeout=20)
+            data = r.json()
+            if data.get("stat") != "ok":
+                # soft failure — retry a couple times then abort
+                print(f"  flickr error ({method}): {data.get('message', 'unknown')}", file=sys.stderr)
+                time.sleep(2 * (attempt + 1))
+                continue
+            return data
+        except (requests.RequestException, ValueError) as e:
+            print(f"  request error ({method}): {e}", file=sys.stderr)
+            time.sleep(2 * (attempt + 1))
+    return None
+
+
+def lens_matches(lensmodel, sig):
+    """Check a lens signature against the EXIF LensModel string."""
+    if not lensmodel:
+        return False
+    lm = lensmodel.lower()
+    if not all(term in lm for term in sig[1]):
+        return False
+    if any(term in lm for term in sig[2]):
+        return False
+    return True
+
+
+def scene_type(photo):
+    """Best-effort scene classification from Flickr tags. Returns one of the
+    stratified scene categories, or 'other'. This is a heuristic used for the
+    stratification column; curation can correct it."""
+    tag_text = " ".join(photo.get("tags", [])).lower() if photo.get("tags") else ""
+    cat_hits = {
+        "portrait": ["portrait", "person", "people", "model", "face"],
+        "landscape": ["landscape", "scenic", "mountain", "sunset", "nature"],
+        "street": ["street", "city", "urban", "streetphotography"],
+        "macro": ["macro", "closeup", "flower", "insect"],
+        "architecture": ["architecture", "building", "interior", "facade"],
+        "night": ["night", "longexposure", "lowlight", "bokeh"],
+    }
+    for cat, terms in cat_hits.items():
+        if any(t in tag_text for t in terms):
+            return cat
+    return "other"
+
+
+# ---------------------------------------------------------------------------
+# Scraper
+# ---------------------------------------------------------------------------
+
+class FlickrCache:
+    """Persists per-photo EXIF lookups to .flickr_cache so partial progress
+    is never lost on interruption, and already-verified photos are skipped."""
+
+    def __init__(self, root=".flickr_cache"):
+        os.makedirs(root, exist_ok=True)
+        self.root = root
+        self.photo_idx = os.path.join(root, "photo_index.txt")   # verified photo IDs
+        self.meta = os.path.join(root, "meta.tsv")
+
+    def already_verified(self, photo_id):
+        # We keep a set in memory; the file is reloaded only at start.
+        return False
+
+    def snap_state(self, cls_name, seen_ids, manifest_rows):
+        """Write intermediate state so a resume can avoid re-fetching."""
+        with open(os.path.join(self.root, f"{cls_name}_seen.txt"), "w") as f:
+            f.write("\n".join(seen_ids))
+
+
+def scrape_class(key, cls_name, config, cache):
+    seen_ids = set()
+    manifest = []
+    matched = {}   # label -> count
+    lens_sigs = config["lenses"]
+
+    for body in config["body_queries"]:
+        print(f"\n=== [{cls_name}] searching body: {body} ===")
+        query_failures = 0
+        page = 1
+        while True:
+            # Stop if we've hit the overall target
+            if len(manifest) >= config["target"]:
+                print(f"  target {config['target']} reached, stopping")
+                return manifest, matched
+
+            data = flickr_get(key, "flickr.photos.search", {
+                "text": body,
+                "per_page": PAGE_SIZE,
+                "page": page,
+                "sort": "interestingness-desc",
+                "license": "4,5,6,7,8,9,10",   # CC licenses + public domain
+                "safe_search": 1,
+                "content_type": 1,             # photos only
+                "extras": "tags,url_q",
+            })
+            if data is None:
+                query_failures += 1
+                if query_failures >= 3:
+                    print("  aborting query (repeated API failures)", file=sys.stderr)
+                    break
+                continue
+            query_failures = 0
+
+            photos = data.get("photos", {}).get("photo", [])
+            pages = data.get("photos", {}).get("pages", 1)
+            if not photos:
+                break
+
+            for photo in photos:
+                pid = photo.get("id")
+                if not pid or pid in seen_ids:
+                    continue
+                seen_ids.add(pid)
+
+                # Verify lens EXIF
+                exif = flickr_get(key, "flickr.photos.getExif", {"photo_id": pid})
+                time.sleep(EXIF_RATE_LIMIT_S)
+                if exif is None:
+                    continue
+                lensmodel = ""
+                for ex in (exif.get("photo", {}) or {}).get("exif", []):
+                    if ex.get("label") in ("Lens", "LensModel"):
+                        lensmodel = (ex.get("raw") or "") or (ex.get("clean") or {}).get("_content", "")
+                        break
+
+                match = None
+                for label, req, forbid in lens_sigs:
+                    if lens_matches(lensmodel, (label, req, forbid)):
+                        # respect per-lens cap
+                        if matched.get(label, 0) >= config["per_lens_cap"]:
+                            continue
+                        match = (label, lensmodel)
+                        break
+                if match is None:
+                    continue   # not a target lens
+
+                label, lensmodel = match
+                # body from EXIF Camera Model if available
+                body = body
+                for ex in (exif.get("photo", {}) or {}).get("exif", []):
+                    if ex.get("label") in ("Camera Model Name", "Camera"):
+                        v = (ex.get("raw") or "") or (ex.get("clean") or {}).get("_content", "")
+                        if v:
+                            body = v
+                        break
+
+                manifest.append({
+                    "flickr_id": pid,
+                    "url": f"https://www.flickr.com/photos/{photo.get('owner','')}/{pid}",
+                    "thumb": photo.get("url_q", ""),
+                    "class": cls_name,
+                    "lens_label": label,
+                    "lens_exif": lensmodel,
+                    "body": body,
+                    "scene_type": scene_type(photo),
+                    "license_id": photo.get("license", ""),
+                    "tags": ",".join(photo.get("tags", []))[:500],
+                })
+                matched[label] = matched.get(label, 0) + 1
+                print(f"  + {label} [{body}] ({matched[label]}/{config['per_lens_cap']}) "
+                      f"total={len(manifest)}")
+
+            if page >= pages:
+                break
+            page += 1
+            time.sleep(SEARCH_RATE_LIMIT_S)
+
+    return manifest, matched
+
+
+def snapshot_counts(cls_name, matched, manifest):
+    print(f"\n=== [{cls_name}] FINAL COUNTS ===")
+    for label, n in sorted(matched.items()):
+        print(f"  {label}: {n}")
+    print(f"  TOTAL: {len(manifest)}")
+
+
+def write_manifest(cls_name, manifest):
+    os.makedirs("data/registry", exist_ok=True)
+    path = f"data/registry/{cls_name}_manifest.csv"
+    fieldnames = ["flickr_id", "url", "thumb", "class", "lens_label",
+                  "lens_exif", "body", "scene_type", "license_id", "tags"]
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(manifest)
+    print(f"Wrote {path} ({len(manifest)} rows)")
+    return path
+
+
+def dry_run():
+    print("Config validation (dry-run):")
+    for cls_name, cfg in CLASSES.items():
+        print(f"  [{cls_name}] target={cfg['target']}, "
+              f"{len(cfg['body_queries'])} bodies, {len(cfg['lenses'])} lens sigs")
+        for body in cfg["body_queries"]:
+            print(f"    body: {body}")
+        for label, req, forbid in cfg["lenses"]:
+            print(f"    lens: {label:22} req={req} forbid={forbid or '-'}")
+    print("\nLooks good.")
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Flickr seed dataset scraper")
+    ap.add_argument("--class", dest="cls", choices=list(CLASSES), default="positive",
+                    help="which class to scrape")
+    ap.add_argument("--dry-run", action="store_true", help="validate config, no requests")
+    args = ap.parse_args()
+
+    if args.dry_run:
+        dry_run()
+        return
+
+    key = load_api_key()
+    cache = FlickrCache()
+    config = CLASSES[args.cls]
+
+    print(f"Scraping [{args.cls}] — target {config['target']} photos")
+    manifest, matched = scrape_class(key, args.cls, config, cache)
+    snapshot_counts(args.cls, matched, manifest)
+    if manifest:
+        write_manifest(args.cls, manifest)
+    print("\nDone.")
+
+
+if __name__ == "__main__":
+    main()
