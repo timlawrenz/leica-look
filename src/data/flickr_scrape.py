@@ -73,18 +73,19 @@ NEGATIVE = {
         # Zeiss Otus mounts are EF/F/E — covered by the above bodies
     ],
     "lenses": [
-        # label,                    required_terms,                forbidden_terms
-        ("Canon 50/1.2L",           ["ef50", "1.2", "l"],          ["ot"],  # can't disambiguate EF vs RF easily
-         ),
-        ("Canon 85/1.2L",           ["ef85", "1.2", "l"],          []),
-        ("Canon 35/1.4L II",        ["ef35", "1.4", "l", "ii"],    []),
-        ("Sony 50/1.2 GM",          ["fe 50", "1.2", "gm"],        []),
-        ("Sony 85/1.4 GM",          ["fe 85", "1.4", "gm"],        []),
-        ("Sony 35/1.4 GM",          ["fe 35", "1.4", "gm"],        []),
-        ("Nikon 50/1.2 S",          ["50", "1.2", "s"],            ["nikkor z 85", "35"]),
-        ("Nikon 85/1.2 S",          ["85", "1.2", "s"],            ["50", "35"]),
-        ("Zeiss Otus 55/1.4",       ["otus", "55"],                []),
-        ("Zeiss Otus 85/1.4",       ["otus", "85"],                []),
+        # label,                    required_terms,                         forbidden_terms
+        ("Canon 50/1.2L",           ["50", "1.2", "l"],                     []),
+        ("Canon 85/1.2L",           ["85", "1.2", "l"],                     []),
+        ("Canon 35/1.4L II",        ["35", "1.4", "ii"],                    []),
+        ("Sony 50/1.2 GM",          ["fe 50", "1.2", "gm"],                 []),
+        ("Sony 85/1.4 GM",          ["fe 85", "1.4", "gm"],                 []),
+        ("Sony 35/1.4 GM",          ["fe 35", "1.4", "gm"],                 []),
+        # Nikon uses "NIKKOR Z ... S" (S-line) — require "nikkor z" so it can't
+        # be confused with the "S" in Canon's "USM" (= Image Stabilization).
+        ("Nikon 50/1.2 S",          ["nikkor z", "50", "1.2"],              []),
+        ("Nikon 85/1.2 S",          ["nikkor z", "85", "1.2"],              []),
+        ("Zeiss Otus 55/1.4",       ["otus", "55"],                         []),
+        ("Zeiss Otus 85/1.4",       ["otus", "85"],                         []),
     ],
     "target": 700,      # ~500-1000 target for negative
     "per_lens_cap": 200,
