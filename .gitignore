@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Data
+data/raw/
+data/processed/
+data/registry/*.csv
+!data/registry/.gitkeep
+
+# Models & checkpoints
+checkpoints/
+*.pt
+*.pth
+*.safetensors
+!*.gitkeep
+
+# Flickr API
+.flickr_cache/
+
+# Hermes
+.hermes/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+*.env.local
