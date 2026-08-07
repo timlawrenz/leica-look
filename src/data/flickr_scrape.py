@@ -160,7 +160,12 @@ def scene_type(photo):
     """Best-effort scene classification from Flickr tags. Returns one of the
     stratified scene categories, or 'other'. This is a heuristic used for the
     stratification column; curation can correct it."""
-    tag_text = " ".join(photo.get("tags", [])).lower() if photo.get("tags") else ""
+    # Flickr returns 'tags' as a SPACE-joined string (not a list), e.g.
+    # "street berlin bokeh night". Normalize to a bare lowercase string.
+    raw_tags = photo.get("tags")
+    if isinstance(raw_tags, list):
+        raw_tags = " ".join(str(t) for t in raw_tags)
+    tag_text = (raw_tags or "").lower()
     cat_hits = {
         "portrait": ["portrait", "person", "people", "model", "face"],
         "landscape": ["landscape", "scenic", "mountain", "sunset", "nature"],
@@ -344,6 +349,9 @@ def scrape_class(key, cls_name, config, cache):
                             body = v
                         break
 
+                raw_tags = photo.get("tags")
+                if isinstance(raw_tags, list):
+                    raw_tags = " ".join(str(t) for t in raw_tags)
                 manifest.append({
                     "flickr_id": pid,
                     "url": f"https://www.flickr.com/photos/{photo.get('owner','')}/{pid}",
@@ -354,7 +362,7 @@ def scrape_class(key, cls_name, config, cache):
                     "body": body,
                     "scene_type": scene_type(photo),
                     "license_id": photo.get("license", ""),
-                    "tags": ",".join(photo.get("tags", []))[:500],
+                    "tags": (raw_tags or "")[:500],
                 })
                 matched[label] = matched.get(label, 0) + 1
                 if len(manifest) % 20 == 0:
