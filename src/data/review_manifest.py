@@ -54,6 +54,18 @@ def download_thumb(photo, outdir):
     return None
 
 
+def _img_data_uri(path):
+    """Return an inline data: URI for a local image (self-contained page)."""
+    if not path or not os.path.exists(path):
+        return None
+    ext = path.rsplit(".", 1)[-1].lower()
+    mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+            "gif": "image/gif", "webp": "image/webp"}.get(ext, "image/jpeg")
+    with open(path, "rb") as f:
+        b64 = __import__("base64").b64encode(f.read()).decode("ascii")
+    return f"data:{mime};base64,{b64}"
+
+
 def build_html(rows, thumbs, outpath):
     by_lens = defaultdict(list)
     for r in rows:
@@ -90,7 +102,9 @@ def build_html(rows, thumbs, outpath):
             pid = r["flickr_id"]
             body = r.get("body", "")
             scene = r.get("scene_type", "")
-            img_html = f"<img src='thumbs/{pid}.jpg'>" if img else "<div>no thumb</div>"
+            img_uri = _img_data_uri(img)
+            img_html = (f"<img src='{img_uri}'>" if img_uri
+                        else "<div>no thumb</div>")
             parts.append(
                 f"<div class='card' id='c-{pid}'>"
                 f"<input type='checkbox' class='rej' value='{pid}'/>"
