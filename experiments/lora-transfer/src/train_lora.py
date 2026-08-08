@@ -904,7 +904,11 @@ def main():
             pipe.transformer.save_pretrained(ckpt_dir)
             print(f"\n  ✓ Checkpoint: {ckpt_dir}")
 
-            if global_step % args.eval_every == 0:
+            # FIXED (2026-08-08): In-training eval disabled — component-level
+            # FluxImg2ImgPipeline construction resolves to FluxPipeline.__call__
+            # which does NOT accept image=.  Post-hoc eval via eval_checkpoint.py
+            # works correctly and replaces this.  See issue #16.
+            if False and global_step % args.eval_every == 0:  # noqa: eval-bug-#16
                 pipe.transformer.eval()
                 eval_dir = run_dir / "evaluation" / f"step_{global_step:05d}"
                 run_evaluation(pipe, eval_images, eval_dir, global_step, args.seed)
