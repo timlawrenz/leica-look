@@ -6,7 +6,11 @@ Living map of active, planned, and concluded workstreams. Status tags: `[ACTIVE]
 
 ## Active
 
-*None currently. Phase 1 is concluded with a PIVOT verdict. See PROJECT_STATUS.md for next actions.*
+* **[ACTIVE — PENDING HUMAN REVIEW] Phase 2a: LoRA Transfer Feasibility** (`experiments/lora-transfer/`)
+  * FLUX.1-dev LoRA (rank=32) on 270 Leica images with edge-weighted loss.
+  * Governance only — training blocked on human design review (issue #14).
+  * Pre-registered gate: DINOv2 embedding shift + attention C/E ratio + CLIP-I.
+  * See `experiments/lora-transfer/provenance.yaml` for full gate criteria.
 
 ---
 
@@ -46,14 +50,16 @@ Living map of active, planned, and concluded workstreams. Status tags: `[ACTIVE]
 
 * **[TBD] Seed sweep** — Re-run top-10 LR configurations with 5 random seeds to measure AUC variance and confirm results aren't lucky splits.
 
-* **[TBD] Attention-map analysis** — Identify which image regions drive DINOv2 classification. Center-weighted (subject) = content confound; edge-weighted (bokeh, vignetting) = lens signal.
+* **[CONCLUDED — GO] Attention-map analysis** — DINOv2-S/14 + DINOv2-g/14 CLS-to-patch attention on 100 images. Correct classifications use more edge features (C/E ratio 2.79 vs 3.51 for incorrect). Effect is real but modest (±3.5 std). Supports lens-signal-at-edges hypothesis. See `experiments/discriminator-attention/analysis.md`.
 
 * **[TBD] Controlled capture** — Photograph same scene with Leica + non-Leica lenses on same body (adapter mount) to isolate rendering from sensor/body.
 
 * **[TBD] Per-class accuracy logging** — Needed for understanding what kinds of images are misclassified.
 
-### Phase 2: LoRA Training (blocked on Phase 1.5)
+### Phase 2: LoRA Training (Phase 2a pending human review)
 
-* **[TBD] LoRA fine-tuning on DINOv2-g** — Train model to reproduce Leica rendering on non-Leica images. Requires validated signal from Phase 1.5.
+* **[ACTIVE — PENDING HUMAN REVIEW] LoRA transfer feasibility** — FLUX.1-dev + edge-weighted loss on 270 Leica images. See `experiments/lora-transfer/`. Blocked on design review (issue #14).
 
-* **[TBD] Image-to-image translation evaluation** — FID, LPIPS, human preference study.
+* **[TBD] Scale to full dataset LoRA** — If Phase 2a passes, expand training.
+
+* **[TBD] Human preference study** — If transfer is measurable, validate with human raters.

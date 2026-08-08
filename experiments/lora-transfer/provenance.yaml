@@ -1,0 +1,35 @@
+arm: lora-transfer
+hypothesis: >
+  A FLUX.1-dev LoRA trained on 270 Leica images with edge-weighted loss can
+  measurably shift non-Leica images toward the Leica rendering distribution
+  in DINOv2 embedding space, while preserving content (CLIP-I > 0.85).
+falsified_if: >
+  Transfer outputs show NO significant shift in DINOv2 embedding cosine
+  distance toward the Leica reference distribution AND/OR the DINOv2
+  attention-map center/edge ratio does NOT decrease (i.e., edge attention
+  does not increase after transfer).
+pre_registered_gate: >
+  PASS if (1) DINOv2 embedding distance to Leica reference distribution
+  decreases by ≥0.02 (cosine) post-transfer, AND (2) attention-map C/E
+  ratio shifts toward edge (Δ ≥ 0.1 decrease), AND (3) CLIP-I content
+  preservation ≥ 0.85 on matched non-Leica images.
+  PENDING if any 2 of 3 criteria met.
+  FAIL if ≤1 criterion met — PIVOT to alternative architecture.
+differs_from: null
+diff_summary: |
+  - First generative experiment (Phase 1 was purely discriminative)
+  - Uses edge-weighted loss derived from attention-map radial profile (#12)
+  - Trains on 270 Leica images, evaluates on 265 matched non-Leica images
+  - Output is image-to-image transfer, not classification
+git_commit: null  # filled at run start
+git_dirty: false
+training_host: game
+training_gpu: RTX 4090
+training_steps: 1500
+data_snapshot: "270 Leica + 265 matched non-Leica (592 EXIF-verified)"
+image_size: [1024, 1024]
+lora_rank: 32
+learning_rate: 5.0e-5
+notes: >
+  Governance only — training must NOT start until human reviews design.
+  Pre-registered gate is provisional; human may adjust thresholds.

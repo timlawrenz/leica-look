@@ -1,0 +1,76 @@
+# Phase 2a: LoRA Transfer — Experiment Config
+# Governance-only: training MUST NOT start until human design review.
+# All values are provisional; human may adjust thresholds.
+
+experiment:
+  arm: lora-transfer
+  phase: "2a-feasibility"
+  status: "PENDING_HUMAN_REVIEW"
+
+model:
+  name: "FLUX.1-dev"
+  repo: "black-forest-labs/FLUX.1-dev"
+  dtype: "fp16"
+  cache_dir: "/mnt/nas-ai-models/huggingface-cache"
+  variant: "default"
+
+lora:
+  rank: 32
+  alpha: 16
+  target_modules: ["to_q", "to_k", "to_v", "to_out.0"]  # all attention layers
+  trigger_token: "lctx"
+  caption_template: "{lctx} {description}"  # description from scene tags if available
+
+training:
+  images: 270  # full Leica dataset
+  steps: 1500
+  batch_size: 1
+  gradient_accumulation: 4
+  resolution: [1024, 1024]
+  learning_rate: 5.0e-5
+  lr_scheduler: "cosine"
+  warmup_steps: 150
+  optimizer: "adamw8bit"
+  seed: 42
+  mixed_precision: "fp16"
+  gradient_checkpointing: true
+
+edge_weighting:
+  enabled: true
+  source: "experiments/discriminator-attention/attention_analysis.json"
+  radial_bins: 10  # centers from bin_centers array
+  crossover_bin: 6  # bins 0-5 = center-weighted, bins 6-9 = edge-weighted
+  center_weight: 1.0
+  edge_weight: 2.0  # amplify peripheral loss by 2×
+  # Derived from attention-map finding: correct classifications attend
+  # more to bins 6-9 (edge), incorrect over-attend to bins 0-5 (center).
+  # See docs/EXPERIMENTS_AND_RESULTS.md §Issue #12.
+
+evaluation:
+  images: 265  # matched non-Leica images from issue #11
+  metrics:
+    - name: "dinov2_embedding_shift"
+      model: "facebook/dinov2-giant"
+      metric: "cosine_distance"
+      reference_distribution: "270 Leica embeddings"
+    - name: "attention_ce_ratio"
+      model: "facebook/dinov2-small"
+      metric: "center_edge_ratio"
+      target_shift: -0.1  # C/E ratio should decrease
+    - name: "clip_i"
+      model: "openai/clip-vit-large-patch14"
+      metric: "cosine_similarity"
+      threshold: 0.85
+  manual_inspection: 10  # randomly sampled images
+
+hardware:
+  gpu: "RTX 4090"
+  vram_required_gb: 20
+  estimated_runtime_hours: 4  # 1500 steps × ~10s/step
+  scheduler_gpu: "4090"
+  scheduler_duration: "12h"
+
+# Pre-registered gate (from provenance.yaml):
+# PASS if: (1) DINOv2 Δ ≥ 0.02, (2) C/E Δ ≤ -0.1, (3) CLIP-I ≥ 0.85
+# PENDING if any 2 of 3 criteria met.
+# FAIL if ≤ 1 criterion met → PIVOT to alternative architecture.
