@@ -80,10 +80,17 @@ from held_out_split import get_train_ids, load_split
 # Paths
 # ---------------------------------------------------------------------------
 
-PROJECT_ROOT = Path("/home/tim/source/activity/leica-look")
+# Paths -- PROJECT_ROOT is derived from the repo location so the same code
+# runs on the local box (/home/tim/source/activity/leica-look) and on the
+# strix (~/activity/leica-look). Override with LEICA_LOOK_ROOT if needed.
+_PROJECT_ROOT = os.environ.get("LEICA_LOOK_ROOT")
+PROJECT_ROOT = Path(_PROJECT_ROOT) if _PROJECT_ROOT else (
+    Path(__file__).resolve().parent.parent.parent.parent
+)  # src/train_lora.py -> experiments/lora-transfer/src -> ... -> repo root
 EXPERIMENT_DIR = PROJECT_ROOT / "experiments" / "lora-transfer"
 RUNS_DIR = EXPERIMENT_DIR / "runs"
 REGISTRY_PATH = PROJECT_ROOT / "data" / "registry" / "verified.csv"
+# Raw images live on the shared NAS -- same path on both machines.
 RAW_DIR = Path("/mnt/nas-ai-models/training-data/leica-look/raw")
 HF_CACHE = Path("/mnt/nas-ai-models/huggingface-cache")
 GPU_SCHEDULER = Path("/mnt/nas-ai-models/gpu-scheduler/gpu_scheduler.py")
