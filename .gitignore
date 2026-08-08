@@ -50,3 +50,6 @@ Thumbs.db
 
 # Generated review page
 review/
+
+# Training runs & checkpoints (NAS-backed: /mnt/nas-ai-models/training-data/leica-look/runs)
+experiments/lora-transfer/runs/
