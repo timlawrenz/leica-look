@@ -484,29 +484,50 @@ def heartbeat(job_id: str, gpu: str, step: int):
 
 
 def run_evaluation(pipe, eval_images, eval_dir, global_step, seed):
-    """Generate transfer outputs for gate evaluation."""
+    """Generate transfer outputs for gate evaluation.
+
+    Uses FluxImg2ImgPipeline (diffusers >=0.35 splits img2img out of
+    FluxPipeline — FluxPipeline.__call__ no longer accepts image=).
+    The img2img pipeline is built from the training pipe's shared components
+    (including the LoRA-wrapped transformer) so adapter weights stay active.
+    """
+    from diffusers.pipelines.flux.pipeline_flux_img2img import FluxImg2ImgPipeline
+
     eval_dir = Path(eval_dir)
     eval_dir.mkdir(parents=True, exist_ok=True)
     device = pipe.device
 
     print(f"\n--- Evaluation at step {global_step} ({len(eval_images)} images) ---")
 
+    # Build img2img pipeline sharing the LoRA transformer (same objects,
+    # no re-loading). Filter to the components FluxImg2ImgPipeline expects.
+    comps = {k: pipe.components[k] for k in (
+        "scheduler", "vae", "text_encoder", "tokenizer",
+        "text_encoder_2", "tokenizer_2", "transformer",
+    ) if k in pipe.components}
+    i2i = FluxImg2ImgPipeline(**comps).to(device)
+    i2i.transformer.eval()
+
     for i, img in enumerate(eval_images):
-        transfer = generate_transfer(
-            pipe, img,
-            num_inference_steps=20,
-            denoising_strength=0.30,
-            guidance_scale=3.5,
-            seed=seed + i,
-        )
+        try:
+            transfer = generate_transfer(
+                i2i, img,
+                num_inference_steps=20,
+                denoising_strength=0.30,
+                guidance_scale=3.5,
+                seed=seed + i,
+            )
+            # Save side-by-side: input | transfer
+            input_img = (img.cpu() * 0.5 + 0.5).clamp(0, 1)
+            transfer_img = (transfer.cpu() * 0.5 + 0.5).clamp(0, 1)
+            comparison = torch.cat([input_img, transfer_img], dim=-1)
+            T.ToPILImage()(comparison).save(eval_dir / f"sample_{i:03d}.png")
+        except Exception as e:
+            print(f"  WARNING: eval sample {i} failed: {type(e).__name__}: {e}")
+            # Non-fatal — keep the training run alive even if eval breaks.
 
-        # Save side-by-side: input | transfer
-        input_img = (img.cpu() * 0.5 + 0.5).clamp(0, 1)
-        transfer_img = (transfer.cpu() * 0.5 + 0.5).clamp(0, 1)
-        comparison = torch.cat([input_img, transfer_img], dim=-1)
-        T.ToPILImage()(comparison).save(eval_dir / f"sample_{i:03d}.png")
-
-    print(f"  Saved {len(eval_images)} transfer samples to {eval_dir}")
+    n_saved = len(list(eval_dir.glob("sample_*.png")))
+    print(f"  Saved {n_saved}/{len(eval_images)} transfer samples to {eval_dir}")
 
 
 def main():
