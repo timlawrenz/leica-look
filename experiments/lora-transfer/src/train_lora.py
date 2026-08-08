@@ -550,6 +550,8 @@ def main():
 
         # 3. Validate held-out split
         print("\n[3/6] Validating held-out split...")
+        split = None
+        train_ids = None
         try:
             split = load_split()
             train_ids = get_train_ids(split)
@@ -557,7 +559,6 @@ def main():
         except FileNotFoundError:
             print("  WARNING: held_out_split.json not found. Run held_out_split.py first.")
             print("  Continuing without split filtering...")
-            train_ids = None
 
         # 4. Validate dataset loading + split filtering
         print("\n[4/6] Validating dataset (held-out filtering)...")
@@ -687,7 +688,7 @@ def main():
             print(f"  ✓ Prompt consistent: '{DEFAULT_PROMPT}'")
             print(f"  ✓ Edge-weighted loss computes correctly")
             print(f"  ✓ Trainable params configured (LoRA only)")
-            print(f"  ✓ Held-out split: {split.get('n_train', '?')} train / {split.get('n_holdout', '?')} held-out")
+            print(f"  ✓ Held-out split: {(split or {}).get('n_train', '?')} train / {(split or {}).get('n_holdout', '?')} held-out")
             print(f"\nReady for real training when human gives GO on issue #15.")
 
         except Exception as e:
