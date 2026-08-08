@@ -161,10 +161,15 @@ class LeicaImageDataset(Dataset):
 # ---------------------------------------------------------------------------
 
 
-def load_pipeline(rank: int = 32, alpha: int = 16):
-    """Load FLUX.1-dev pipeline and apply LoRA to transformer."""
+def load_pipeline(rank: int = 32, alpha: int = 16, resume_ckpt: Optional[str] = None):
+    """Load FLUX.1-dev pipeline and apply LoRA to transformer.
+
+    If resume_ckpt is given, load the trainable PEFT adapter from that
+    checkpoint dir (saved via transformer.save_pretrained) instead of
+    starting from a fresh LoRA. Used to resume interrupted training.
+    """
     from diffusers.pipelines.flux.pipeline_flux import FluxPipeline
-    from peft import LoraConfig, get_peft_model
+    from peft import LoraConfig, get_peft_model, PeftModel
 
     print("Loading FLUX.1-dev pipeline...")
     dtype = torch.float16
@@ -176,28 +181,43 @@ def load_pipeline(rank: int = 32, alpha: int = 16):
         local_files_only=False,  # Allow fetching missing configs/shards on first run
     )
 
-    # Apply LoRA to transformer attention layers only
-    print(f"Applying LoRA (rank={rank}, alpha={alpha})...")
-    lora_config = LoraConfig(
-        r=rank,
-        lora_alpha=alpha,
-        target_modules=["to_q", "to_k", "to_v", "to_out.0"],
-        lora_dropout=0.0,
-        bias="none",
-    )
-    pipe.transformer = get_peft_model(pipe.transformer, lora_config)
-    pipe.transformer.print_trainable_parameters()
+    if resume_ckpt:
+        print(f"Resuming LoRA adapter from {resume_ckpt}...")
+        # Freeze everything first, then wrap with trainable LoRA from checkpoint
+        pipe.vae.requires_grad_(False)
+        if pipe.text_encoder is not None:
+            pipe.text_encoder.requires_grad_(False)
+        if pipe.text_encoder_2 is not None:
+            pipe.text_encoder_2.requires_grad_(False)
+        pipe.transformer = PeftModel.from_pretrained(
+            pipe.transformer, str(resume_ckpt), is_trainable=True,
+        )
+        pipe.transformer.print_trainable_parameters()
+    else:
+        # Apply LoRA to transformer attention layers only
+        print(f"Applying LoRA (rank={rank}, alpha={alpha})...")
+        lora_config = LoraConfig(
+            r=rank,
+            lora_alpha=alpha,
+            target_modules=["to_q", "to_k", "to_v", "to_out.0"],
+            lora_dropout=0.0,
+            bias="none",
+        )
+        pipe.transformer = get_peft_model(pipe.transformer, lora_config)
+        pipe.transformer.print_trainable_parameters()
 
     # Enable gradient checkpointing to save VRAM (essential for 24GB cards)
     pipe.transformer.enable_gradient_checkpointing()
     print("  Gradient checkpointing enabled")
 
-    # Freeze everything except LoRA params
-    pipe.vae.requires_grad_(False)
-    if pipe.text_encoder is not None:
-        pipe.text_encoder.requires_grad_(False)
-    if pipe.text_encoder_2 is not None:
-        pipe.text_encoder_2.requires_grad_(False)
+    # Freeze everything except LoRA params (fresh-LoRA path only; the resume
+    # path already froze before wrapping)
+    if not resume_ckpt:
+        pipe.vae.requires_grad_(False)
+        if pipe.text_encoder is not None:
+            pipe.text_encoder.requires_grad_(False)
+        if pipe.text_encoder_2 is not None:
+            pipe.text_encoder_2.requires_grad_(False)
 
     return pipe
 
@@ -466,6 +486,10 @@ def parse_args():
     parser.add_argument("--save-every", type=int, default=500)
     parser.add_argument("--eval-every", type=int, default=500)
     parser.add_argument("--dry-run", action="store_true", help="Verify setup without training")
+    parser.add_argument("--resume", default=None,
+                        help="resume from this checkpoint dir (e.g. runs/.../checkpoints/step_00500)")
+    parser.add_argument("--start-step", type=int, default=0,
+                        help="global step to resume counting from (used with --resume)")
     return parser.parse_args()
 
 
@@ -787,7 +811,10 @@ def main():
 
     # ---- Load model ----
     print("\nLoading FLUX.1-dev + LoRA...")
-    pipe = load_pipeline(args.rank, args.alpha)
+    resume_ckpt = args.resume
+    if resume_ckpt:
+        print(f"  (resume mode: loading adapter from {resume_ckpt})")
+    pipe = load_pipeline(args.rank, args.alpha, resume_ckpt=resume_ckpt)
     pipe.to(device)
 
     # ---- Edge-weighted loss map ----
@@ -838,7 +865,7 @@ def main():
     print(f"{'='*60}\n")
 
     pipe.transformer.train()
-    global_step = 0
+    global_step = args.start_step  # resume support: start from --start-step
     total_loss = 0.0
     data_iter = iter(dataloader)
     start_time = time.time()
