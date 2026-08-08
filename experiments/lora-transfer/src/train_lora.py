@@ -348,7 +348,8 @@ def train_step(
     t_float = t.float() / 1000.0  # FLUX expects timestep/1000
 
     # Add noise (FLUX flow matching: scale_noise, NOT add_noise)
-    noisy_packed = pipe.scheduler.scale_noise(packed, noise, t)
+    # NOTE: scale_noise(sample, timestep, noise) — timestep is the 2nd arg!
+    noisy_packed = pipe.scheduler.scale_noise(packed, t, noise)
 
     # 6. Forward through transformer with LoRA
     guidance = torch.full((B,), guidance_scale, device=device, dtype=dtype)
