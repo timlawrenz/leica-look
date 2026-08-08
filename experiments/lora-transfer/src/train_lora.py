@@ -347,9 +347,15 @@ def train_step(
     t = torch.randint(200, 600, (B,), device=device)
     t_float = t.float() / 1000.0  # FLUX expects timestep/1000
 
-    # Add noise (FLUX flow matching: scale_noise, NOT add_noise)
-    # NOTE: scale_noise(sample, timestep, noise) — timestep is the 2nd arg!
-    noisy_packed = pipe.scheduler.scale_noise(packed, t, noise)
+    # Add noise via FLUX flow-matching: noisy = sigma*noise + (1-sigma)*sample,
+    # where sigma = t/1000 (=t_float). We compute this DIRECTLY instead of using
+    # scheduler.scale_noise(), because scale_noise looks the integer timestep up
+    # in self.timesteps, which has floating-point rounding (np.linspace then
+    # /1000*1000) so many sampled integers aren't found exactly -> intermittent
+    # IndexError. Direct computation is mathematically identical and robust.
+    #   packed: (B, 4096, 64), t_float: (B,)
+    sigma = t_float.to(packed.dtype).view(B, 1, 1)  # (B,1,1) flow-matching time
+    noisy_packed = sigma * noise + (1.0 - sigma) * packed
 
     # 6. Forward through transformer with LoRA
     guidance = torch.full((B,), guidance_scale, device=device, dtype=dtype)
