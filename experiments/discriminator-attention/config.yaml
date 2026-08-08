@@ -1,0 +1,28 @@
+# Attention-Map Analysis Configuration
+
+model: dinov2-small
+model_repo: facebook/dinov2-small
+validation_model: dinov2-giant
+validation_model_repo: facebook/dinov2-giant
+
+# Classification
+embedding_pooling: cls_patch
+classifier: logistic_regression
+C: 1.0
+cv_folds: 5
+random_seed: 42
+
+# Attention extraction
+img_size: 224
+attn_layer: -1  # last transformer layer
+batch_size: 4
+
+# Image selection
+n_correct: 50
+n_incorrect: 50
+selection: most_confident  # by distance from decision boundary
+
+# Radial profile
+n_bins: 10
+center_region: 3x3  # central patch region
+edge_region: perimeter  # outermost ring of patches

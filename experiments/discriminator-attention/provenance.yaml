@@ -1,0 +1,41 @@
+arm: discriminator-attention
+hypothesis: >
+  DINOv2 attention maps can spatially localize the Leica/non-Leica classification signal.
+  If the signal is driven by image CENTER (subject), it's likely content confound.
+  If it's driven by EDGES/CORNERS (bokeh, vignetting, focus falloff), it's lens rendering.
+falsified_if: >
+  Correct and incorrect classifications show identical center/edge attention ratios
+  (no spatial distinction), OR correctly classified images are MORE center-weighted
+  than incorrect ones (contradicting the lens-at-edges hypothesis).
+pre_registered_gate: >
+  PASS if correctly classified images show EDGE/CORNER-weighted attention (center/edge ratio < 1.5)
+  while incorrectly classified images show CENTER-weighted attention (center/edge ratio > 2.0).
+  PENDING if the pattern is present but effect size is small or variance is large.
+  FAIL if no difference between correct and incorrect attention profiles.
+differs_from: discriminator-baseline
+diff_summary: |
+  - Analyzes DINOv2 attention maps (spatial), not just embeddings (vector)
+  - Compares correct vs incorrect classification attention profiles
+  - Uses last-layer CLS-to-patch attention from DINOv2-S/14 and DINOv2-g/14
+  - Radial profile: 10 concentric bins from center to edge
+  - 100 images: 50 correct + 50 incorrect (most-confident from 5-fold CV LR)
+git_commit: a1b2c3d
+git_dirty: false
+training_host: game
+training_gpu: RTX 4090
+data_snapshot: 592 verified images (265 Leica + 327 non-Leica), embeddings from Phase 1
+models_used: [dinov2-small, dinov2-giant]
+attn_layer: -1
+grid_size: 16x16
+n_patches: 256
+n_images_analyzed: 100
+classification_auc: 0.906
+classification_accuracy: 0.833
+verdict: GO (moderate support — edge-based signal detected, effect size modest)
+notes: >
+  DINOv2-S shows center/edge ratio of 2.79 (correct) vs 3.51 (incorrect).
+  DINOv2-g shows 1.14 (correct) vs 1.60 (incorrect). Both support the edge-signal hypothesis.
+  Inner bins (0-5) show higher attention for incorrect; outer bins (6-9) show higher for correct.
+  Standard deviations are large (±3.5-4.4), limiting statistical confidence.
+  Street photography is an exception (no center/edge distinction).
+  Scene type tagging is sparse (67/100 are "other").

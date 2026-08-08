@@ -132,12 +132,12 @@ SigLIP's best LR (0.938) comes from cls_patch (2,304-dim concatenation) at n=50 
 
 | Check | Status | Detail |
 |---|---|---|
-| Metric code has unit tests | ❌ | Zero test files in repo. All three scripts use `sklearn.metrics.roc_auc_score` directly without test harness. |
+| Metric code has unit tests | ✅ | 42 tests in `tests/test_probe_scripts.py` covering: roc_auc_score parsing, stratified split, label/embedding alignment, synthetic separable/noise known-answer tests, run_split structure, determinism, and edge cases. Pytest passes. |
 | Metric definition unchanged | ✅ | All scripts use identical `roc_auc_score(y_test, y_prob)` — metric version is consistent. |
-| Winner reproduced (different seed) | ❌ | All runs use deterministic seed=42. No seed sweep or reproduction run performed. |
+| Winner reproduced (different seed) | ✅ | Seed sweep of top-10 LR configs with 5 non-42 seeds. **Critical finding: all n=50 configs are lucky splits.** CLIP multicrop n=50 drops from 0.987→0.892 (σ=0.050), SigLIP n=50 collapses from 0.938→0.789 (σ=0.092). n=250 configs are stable (σ ≤ 0.02). See `experiments/discriminator-seed-sweep/results.csv` and §7 below. |
 | Extremes + edge cases inspected | ❌ | No per-image predictions saved. No manual inspection of top/bottom predictions. |
 
-**Adversarial pass: INCOMPLETE** — 3 of 4 checks are not met. The verdict must be qualified.
+**Adversarial pass: PARTIAL** — 2 of 4 checks met (unit tests ✅, seed sweep ✅). 2 remaining: edge-case inspection and the pre-existing metric-definition check. The verdict remains PIVOT, but the "lucky split" variance risk is now quantified.
 
 ---
 
@@ -190,3 +190,81 @@ The raw numbers clear the GO threshold (>0.90) for several models, but the adver
 - **k-NN results:** `experiments/discriminator-knn/results.csv` (378 rows)
 - **Analysis script:** `scripts/compile_phase1_results.py`
 - **Probe scripts:** `src/run_logistic_probes.py`, `src/run_mlp_probes.py`, `src/run_knn_probes.py`
+- **Seed sweep results:** `experiments/discriminator-seed-sweep/results.csv` (50 rows)
+- **Seed sweep script:** `scripts/run_seed_sweep.py`
+- **Content-matched results:** `experiments/discriminator-content-matched/results.csv` (2,016 rows)
+- **Content-matching script:** `scripts/run_content_matching.py`
+
+---
+
+## 7. Seed Sweep Results (Issue #10)
+
+**Date:** 2026-08-07
+**Goal:** Measure AUC variance across 5 non-42 seeds to identify "lucky splits." Re-ran top-10 unique LR configs.
+
+### Findings
+
+| # | Model | Pooling | n | C | Orig AUC | Mean AUC | σ | Flag |
+|---|---|---|---|---|---|---|---|---|
+| 1 | clip-vitl14 | multicrop | 50 | 10.0 | 0.9867 | 0.8924 | 0.050 | ⚠️ |
+| 2 | clip-vitl14 | cls | 50 | 10.0 | 0.9778 | 0.8951 | 0.044 | ⚠️ |
+| 3 | clip-vitl14 | cls_patch | 250 | 10.0 | 0.9721 | 0.9600 | 0.012 | |
+| 4 | clip-vitl14 | multicrop | 250 | 0.1 | 0.9669 | 0.9535 | 0.016 | |
+| 5 | clip-vitl14 | cls | 250 | 0.1 | 0.9651 | 0.9564 | 0.018 | |
+| 6 | clip-vitl14 | cls_patch | 50 | 1.0 | 0.9644 | 0.9093 | 0.026 | ⚠️ |
+| 7 | clip-vitl14 | patch_mean | 250 | 1.0 | 0.9545 | 0.9416 | 0.011 | |
+| 8 | clip-vitl14 | patch_gem | 250 | 1.0 | 0.9429 | 0.9383 | 0.012 | |
+| 9 | siglip-so400m | cls_patch | 50 | 1.0 | 0.9378 | 0.7893 | 0.092 | ⚠️💀 |
+| 10 | clip-vitl14 | patch_max | 250 | 10.0 | 0.9292 | 0.9172 | 0.010 | |
+
+**ALL n=50 configs are lucky splits.** SigLIP is a catastrophic mirage (0.938→0.789). n=250 configs are stable (σ≤0.02). CLIP at n=250 is real (~0.95) but the content confound stands.
+
+---
+
+## 8. Content-Matching Experiment (Issue #11)
+
+**Date:** 2026-08-07
+**Goal:** Determine whether the Phase 1 signal is lens rendering or content. CLIP-matched pairs (highest CLIP CLS cosine similarity), aspect-ratio-matched pairs, and random pairs. 265 pairs each × 7 models × 4 pooling × 3 strategies × 4 C × 6 seeds = 2,016 evaluations.
+
+**Limitation:** Non-Leica images lack scene_type labels. Matching uses CLIP embedding similarity and aspect ratio as proxies.
+
+### Results: Best Mean AUC (across pooling/seed/C)
+
+| Model | CLIP-matched | Aspect-matched | Random | Phase 1 best LR |
+|---|---|---|---|---|
+| DINOv2 ViT-S/14 | 0.9059 | 0.9141 | 0.9060 | 0.9289 |
+| DINOv2 ViT-B/14 | 0.9213 | 0.9300 | 0.9233 | 0.9138 |
+| DINOv2 ViT-L/14 | 0.9133 | 0.9310 | 0.9153 | 0.9067 |
+| DINOv2 ViT-g/14 | 0.9250 | 0.9419 | 0.9344 | 0.9156 |
+| DINOv3 ViT-L/16 | 0.9379 | 0.9504 | 0.9402 | 0.9156 |
+| SigLIP SO400M | 0.8806 | 0.8887 | 0.8905 | 0.9378* |
+| **CLIP ViT-L/14** | **0.9597** | **0.9666** | **0.9601** | 0.9867* |
+
+*Phase 1 numbers from seed=42 only (lucky per §7).
+
+### CLIP vs DINOv2 Gap
+
+| Strategy | CLIP mean | DINOv2 mean | Δ | Δ reduction |
+|---|---|---|---|---|
+| CLIP-matched | 0.9494 | 0.9074 | +0.0420 | −24% |
+| Aspect-matched | 0.9578 | 0.9213 | +0.0366 | −33% |
+| Random | 0.9490 | 0.9126 | +0.0365 | −34% |
+| **Phase 1 (full)** | **0.9181** | **0.8631** | **+0.0550** | baseline |
+
+### Key Findings
+
+1. **CLIP does NOT collapse to ~0.5 on matched pairs.** This falsifies the "pure content confound" prediction — CLIP retains strong discriminative power (AUC ~0.96) on matched images. CLIP captures both semantic content AND lens-rendering features.
+
+2. **DINOv2 performance IMPROVES on matched pairs.** DINOv2-g: 0.925–0.942 on matched vs. 0.916 in Phase 1. DINOv3-L: 0.938–0.950 — the strongest non-CLIP model. The matched subset is a cleaner comparison.
+
+3. **The CLIP-DINO gap narrows 24–34% but doesn't close.** Content matching eliminates ~1.5 pts of the 5.5 pt gap. The remaining gap suggests either (a) CLIP captures lens rendering better than DINOv2, or (b) some residual content confound persists.
+
+4. **SigLIP collapses** — consistent with §7 seed sweep. Retire from comparison.
+
+### Interpretation
+
+**The "content confound" diagnosis was partially wrong.** CLIP's Phase 1 dominance is NOT primarily because it detects photographer subject choices — it's because CLIP is a stronger model overall. On content-matched pairs, CLIP still wins by 3.7–4.2 pts.
+
+**There IS a real lens-rendering signal.** DINOv2 (self-supervised, no text) achieves AUC 0.90–0.95 on matched pairs — substantially above chance. The Leica/non-Leica distinction is learnable from visual features alone.
+
+**Phase 2 can proceed** with this evidence. The remaining risk of learning subject choices instead of rendering is reduced but not eliminated. The controlled-capture experiment (#13, human-blocked) would be the definitive test.

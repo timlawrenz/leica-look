@@ -33,3 +33,30 @@ learning_rate: 5.0e-5
 notes: >
   Governance only — training must NOT start until human reviews design.
   Pre-registered gate is provisional; human may adjust thresholds.
+
+  FIX #4 (caption, 2026-08-08): Caption template reconciled with code.
+  Single trigger 'lctx photo' used consistently — standard Dreambooth/LoRA
+  approach for rendering transfer. Per-image captions not needed for a
+  look-transfer LoRA (composition control is not the goal).
+
+  FIX #2 (held-out split, 2026-08-08): 35 Leica images (13.2%) reserved
+  as held-out set in held_out_split.json. Gate must confirm shift toward
+  held-out centroid (generalization), not just training-set centroid.
+
+  FIX #1 (color baseline, 2026-08-08): Color-transfer baseline control arm
+  added (src/color_transfer_baseline.py). Reinhard LAB color transfer
+  isolates color science from optical rendering signal.
+
+  FIX #3 (dry-run, 2026-08-08): Dry-run executed 2026-08-08_090324 on RTX 4090.
+  PARTIAL PASS: pack/unpack roundtrip (0.0 error), prompt consistency ('lctx photo'),
+  timestep/scale_noise, weight map, held-out split, dataset all validated.
+  Forward pass OOM at 1024²: FLUX fp16 transformer uses 24.0/25.2 GB VRAM,
+  leaving insufficient headroom for activations. Code logic verified;
+  deployment recommendation: use 512² resolution or Strix Halo (110 GB).
+  Log: runs/dry-run-2026-08-08/
+
+  FIX #1 execution (2026-08-08_091121): Color-transfer baseline computed.
+  Reinhard LAB transfer on 50 non-Leica images → DINOv2 Δ = -0.0007.
+  Pure color transfer does NOT shift toward Leica centroid; if LoRA Δ ≥ 0.02,
+  the signal is genuinely beyond color science. Results:
+  runs/color_baseline/2026-08-08_091121/color_transfer_results.json
