@@ -79,13 +79,37 @@ def main():
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--registry", default=str(PROJECT_ROOT / "data" / "registry" / "verified.csv"))
     ap.add_argument("--out", default=None)
+    ap.add_argument("--image", default=None,
+                    help="process a single user-supplied image (absolute path) instead of the registry eval set")
     args = ap.parse_args()
 
     ckpt = Path(args.ckpt)
-    outdir = Path(args.out) if args.out else ckpt.parent.parent / "evaluation" / "manual_step500"
+    outdir = Path(args.out) if args.out else ckpt.parent.parent / "evaluation" / ("single_" + Path(args.image).stem if args.image else "manual_step500")
     outdir.mkdir(parents=True, exist_ok=True)
 
     pipe = load_pipeline_with_adapter(ckpt)
+
+    if args.image:
+        # Single user image
+        img_path = Path(args.image)
+        tfm = T.Compose([T.Resize(1024, interpolation=T.InterpolationMode.BICUBIC),
+                         T.CenterCrop(1024), T.ToTensor(), T.Normalize([0.5], [0.5])])
+        img = tfm(Image.open(img_path).convert("RGB"))
+        name = img_path.stem
+        try:
+            transfer = generate(pipe, img, seed=0)
+            inp = (img.cpu() * 0.5 + 0.5).clamp(0, 1)
+            trs = (transfer.cpu() * 0.5 + 0.5).clamp(0, 1)
+            comp = torch.cat([inp, trs], dim=-1)
+            T.ToPILImage()(comp).save(outdir / f"{name}_step500.png")
+            T.ToPILImage()(trs).save(outdir / f"{name}_transfer_only.png")
+            print(f"Saved side-by-side + transfer-only for {name} -> {outdir}")
+        except Exception as e:
+            print(f"FAILED: {type(e).__name__}: {e}")
+            import traceback; traceback.print_exc()
+            sys.exit(1)
+        sys.exit(0)
+
     imgs, paths = load_eval_images(args.registry, n=20, seed=42)
 
     print(f"Generating {len(imgs)} transfer samples -> {outdir}")
