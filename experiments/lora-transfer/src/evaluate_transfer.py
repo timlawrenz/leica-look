@@ -21,6 +21,7 @@ USAGE:
 import argparse
 import csv
 import json
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -48,7 +49,7 @@ from evaluation import (
 )
 
 
-PROJECT_ROOT = Path("/home/tim/source/activity/leica-look")
+PROJECT_ROOT = Path(os.environ.get("LEICA_LOOK_ROOT", str(Path(__file__).resolve().parent.parent.parent.parent)))
 EXPERIMENT_DIR = PROJECT_ROOT / "experiments" / "lora-transfer"
 REGISTRY_PATH = PROJECT_ROOT / "data" / "registry" / "verified.csv"
 HF_CACHE = Path("/mnt/nas-ai-models/huggingface-cache")

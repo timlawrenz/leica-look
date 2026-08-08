@@ -50,7 +50,7 @@ from evaluation import (
     load_leica_centroid,
 )
 
-PROJECT_ROOT = Path("/home/tim/source/activity/leica-look")
+PROJECT_ROOT = Path(os.environ.get("LEICA_LOOK_ROOT", str(Path(__file__).resolve().parent.parent.parent.parent)))
 EXPERIMENT_DIR = PROJECT_ROOT / "experiments" / "lora-transfer"
 REGISTRY_PATH = PROJECT_ROOT / "data" / "registry" / "verified.csv"
 RAW_DIR = Path("/mnt/nas-ai-models/training-data/leica-look/raw")

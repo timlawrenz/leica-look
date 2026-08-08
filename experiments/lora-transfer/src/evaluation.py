@@ -17,6 +17,7 @@ Pre-registered gate (from provenance.yaml):
 
 import json
 import math
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -28,13 +29,12 @@ import numpy as np
 # Data loading helpers
 # ---------------------------------------------------------------------------
 
+_PROJECT_ROOT = Path(os.environ.get("LEICA_LOOK_ROOT", str(Path(__file__).resolve().parent.parent.parent.parent)))
 EMBEDDINGS_DIR = Path("/mnt/nas-ai-models/training-data/leica-look/embeddings")
-MATCHED_DIR = Path("/home/tim/source/activity/leica-look/experiments/discriminator-content-matched")
-ATTENTION_DIR = Path("/home/tim/source/activity/leica-look/experiments/discriminator-attention")
-EXPERIMENT_DIR = Path("/home/tim/source/activity/leica-look/experiments/lora-transfer")
-BASELINE_PATH = Path(
-    "/home/tim/source/activity/leica-look/experiments/lora-transfer/baseline_cosine_distances.json"
-)
+MATCHED_DIR = _PROJECT_ROOT / "experiments" / "discriminator-content-matched"
+ATTENTION_DIR = _PROJECT_ROOT / "experiments" / "discriminator-attention"
+EXPERIMENT_DIR = _PROJECT_ROOT / "experiments" / "lora-transfer"
+BASELINE_PATH = EXPERIMENT_DIR / "baseline_cosine_distances.json"
 
 
 def load_embeddings(model: str = "dinov2-giant", pooling: str = "cls"):

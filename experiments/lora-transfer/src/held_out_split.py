@@ -22,7 +22,9 @@ from typing import Tuple, Set, Optional
 
 import numpy as np
 
-PROJECT_ROOT = Path("/home/tim/source/activity/leica-look")
+# PROJECT_ROOT derived from repo location (portable: local + strix).
+# Override with LEICA_LOOK_ROOT if needed.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 EXPERIMENT_DIR = PROJECT_ROOT / "experiments" / "lora-transfer"
 REGISTRY_PATH = PROJECT_ROOT / "data" / "registry" / "verified.csv"
 SPLIT_PATH = EXPERIMENT_DIR / "held_out_split.json"
