@@ -1,0 +1,38 @@
+{
+  "model": "dinov2-giant",
+  "pooling": "cls",
+  "n_total": 592,
+  "n_leica": 265,
+  "n_nonleica": 327,
+  "same_class_leica": {
+    "mean": 0.949028730392456,
+    "std": 0.10014217346906662,
+    "median": 0.9735549688339233,
+    "p5": 0.8057265877723694,
+    "p95": 1.0215051174163818
+  },
+  "same_class_nonleica": {
+    "mean": 0.9690372943878174,
+    "std": 0.07108795642852783,
+    "median": 0.9814213514328003
+  },
+  "cross_class": {
+    "mean": 0.9746118187904358,
+    "std": 0.042330823838710785,
+    "median": 0.9809150695800781,
+    "p5": 0.9052000045776367,
+    "p95": 1.0244560241699219
+  },
+  "raw_gap": 0.025583088397979736,
+  "noise_to_signal_ratio": 0.2554676830768585,
+  "centroid_analysis": {
+    "leica_to_centroid_mean": 0.7633570432662964,
+    "leica_to_centroid_std": 0.12997454404830933,
+    "nonleica_to_centroid_mean": 0.8948498368263245,
+    "nonleica_to_centroid_std": 0.055142104625701904,
+    "centroid_gap": 0.13149279356002808,
+    "effect_size": 1.011681079864502,
+    "proposed_delta_0_02_pct_of_gap": 15.20995807647705,
+    "pct_nl_within_delta_of_leica_mean": 6.727828746177369
+  }
+}

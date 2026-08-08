@@ -46,11 +46,11 @@ Living map of active, planned, and concluded workstreams. Status tags: `[ACTIVE]
 
 ### Phase 1.5: Content Confound Resolution
 
-* **[TBD] Content-matching experiment** — Pair-match Leica/non-Leica images by scene type and composition. Re-run probes on matched pairs to isolate lens signal.
+* **[CONCLUDED — GO] Content-matching experiment (#11)** — CLIP-matched + aspect-matched pairs. DINOv2-g 0.925–0.942 AUC on matched set. CLIP gap narrows 24–34% but doesn't close. See `experiments/discriminator-content-matched/results.csv`.
 
-* **[TBD] Seed sweep** — Re-run top-10 LR configurations with 5 random seeds to measure AUC variance and confirm results aren't lucky splits.
+* **[CONCLUDED — GO] Seed sweep (#10)** — Top-10 LR configs with 5 seeds. Confirms n=50/class are lucky splits (σ 0.04–0.08); n=250/class stable (σ ≤ 0.02). See `experiments/discriminator-seed-sweep/results.csv`.
 
-* **[CONCLUDED — GO] Attention-map analysis** — DINOv2-S/14 + DINOv2-g/14 CLS-to-patch attention on 100 images. Correct classifications use more edge features (C/E ratio 2.79 vs 3.51 for incorrect). Effect is real but modest (±3.5 std). Supports lens-signal-at-edges hypothesis. See `experiments/discriminator-attention/analysis.md`.
+* **[CONCLUDED — GO] Attention-map analysis (#12)** — DINOv2-S/14 + DINOv2-g/14 CLS-to-patch attention on 100 images. Correct classifications use more edge features (C/E ratio 2.79 vs 3.51 for incorrect). Effect is real but modest (±3.5 std). Supports lens-signal-at-edges hypothesis. See `experiments/discriminator-attention/analysis.md`.
 
 * **[TBD] Controlled capture** — Photograph same scene with Leica + non-Leica lenses on same body (adapter mount) to isolate rendering from sensor/body.
 

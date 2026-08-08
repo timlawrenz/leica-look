@@ -33,12 +33,22 @@ Phase 2a governance infrastructure is in place at `experiments/lora-transfer/`:
 ## Immediate blockers / next action
 
 1. **⛔ BLOCKED: Issue #14 design review.** Phase 2a LoRA transfer experiment needs human go/no-go decision.
+   - ✅ Gate threshold calibrated: Δ ≥ 0.02 is 15.2% of centroid gap — reasonable for feasibility (see `experiments/lora-transfer/baseline_cosine_distances.json`)
    - Review the pre-registered gate thresholds
    - Approve or modify the edge-weighted loss approach
    - Decide whether to proceed with training
 2. **⛔ BLOCKED: Issue #13 (controlled capture).** Requires physical camera — skip until human unblocks.
 
 **Do NOT start training until the human reviews and approves the Phase 2a design.**
+
+## Baseline calibration (2026-08-07)
+
+Gate threshold calibration completed (CPU-only, no GPU needed):
+- DINOv2-g CLS centroid gap: 0.131 (Leica → centroid: 0.763, NonLeica → centroid: 0.895)
+- Δ ≥ 0.02 = 15.2% of gap — aggressive but feasible for 1500-step experiment
+- Only 6.7% of non-Leica images naturally fall within Δ of Leica centroid
+- Effect size: 1.01 (gap / Leica σ) — moderate-to-strong
+- Results: `experiments/lora-transfer/baseline_cosine_distances.json`
 
 ## Governance docs
 
