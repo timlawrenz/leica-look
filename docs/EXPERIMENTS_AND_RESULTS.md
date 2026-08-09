@@ -4,25 +4,49 @@ This ledger documents all empirical findings from the leica-look project. Negati
 
 ---
 
-## Phase 2a: LoRA Transfer Feasibility — `[PENDING HUMAN REVIEW]`
+## Phase 2a: LoRA Transfer Feasibility — `[CONCLUDED — FAIL]`
 
-**Date:** 2026-08-07
+**Date:** 2026-08-08 (training), 2026-08-09 (evaluation)
 **Goal:** Determine whether a FLUX.1-dev LoRA trained on 270 Leica images with edge-weighted loss can measurably shift non-Leica images toward the Leica rendering distribution in DINOv2 embedding space.
 
-**Pre-registered gate (stated BEFORE results — provisional, human may adjust):**
-> PASS if: (1) DINOv2 embedding cosine distance to Leica reference distribution decreases by ≥0.02 post-transfer, AND (2) attention-map C/E ratio decreases by ≥0.1 (more edge attention), AND (3) CLIP-I content preservation ≥ 0.85 on matched non-Leica images.
-> PENDING if any 2 of 3 criteria met. FAIL if ≤ 1 criterion met — PIVOT to alternative architecture.
+**Pre-registered gate (stated BEFORE results):**
+> PASS if: (1) DINOv2 embedding cosine distance to Leica centroid decreases by ≥0.02, AND (2) attention C/E ratio decreases by ≥0.10 (more edge attention), AND (3) CLIP-I ≥ 0.85.
+> PENDING if 2/3 met. FAIL if ≤ 1 met. 
 
 ### Empirical Evidence
-*Not yet run. Awaiting human design review on issue #14.*
 
-### Verdict
-**PENDING HUMAN REVIEW.** Governance infrastructure in place. Training blocked on human go/no-go decision.
+- **Run:** `runs/2026-08-08_165323`, 1500 steps, batch=1, grad_accum=4, lr=5e-5, rank=32, 1024²
+- **Eval:** 20 held-out non-Leica images at step_01500
+
+| Gate | Threshold | Actual | Pass? |
+|------|-----------|--------|-------|
+| DINOv2 embedding shift | Δ ≥ 0.02 | -0.00075 | **FAIL** |
+| Attention C/E ratio | Δ ≤ -0.10 | +0.01422 | **FAIL** |
+| CLIP-I preservation | ≥ 0.85 | 0.8977 | **PASS** |
+
+- **Held-out generalization:** Δ = -0.0015 (MEMORIZATION_RISK — no generalization to held-out Leica images)
+- **Color baseline:** Color transfer Δ = -0.0007; LoRA Δ = -0.0008. LoRA/Color ratio: -0.75× (indistinguishable from color-only transfer)
+- **DINOv2 pre-mean distance:** 0.8844 → post: 0.8851 (no movement)
+- **Attention C/E:** 1.41 → 1.42 (attention shifted slightly toward center, not edges)
+- **CLIP-I:** mean 0.90, min 0.75, 80% above threshold (content preserved)
+
+### Adversarial Pass
+
+- [x] Gate #3 metric (CLIP-I) verified working: 20 image pairs, plausible values 0.75–0.97
+- [x] DINOv2 g embeddings verified: distances in expected range (0.73–0.98)
+- [ ] Metric code has unit tests — NO (known project gap)
+- [ ] Result reproduced (2nd seed) — NO (only one training run)
+- [x] Edge cases inspected — per-image deltas show random scatter, no systematic shift. The positive Δ fraction (45%) is indistinguishable from coin flips.
+
+**Verdict: FAIL.** The LoRA learned content preservation but produced zero measurable shift toward the Leica rendering distribution. The effect is indistinguishable from color-only transfer. This suggests either insufficient training signal (batch=1, 1500 steps), ineffective edge-weighted loss, or LoRA-on-FLUX is fundamentally insufficient for lens-rendering transfer.
 
 ### Artifacts
 - Config: `experiments/lora-transfer/config.yaml`
 - Provenance: `experiments/lora-transfer/provenance.yaml`
-- Design discussion: [Issue #14](https://github.com/timlawrenz/leica-look/issues/14)
+- Checkpoint: `experiments/lora-transfer/runs/2026-08-08_165323/checkpoints/final/`
+- Evaluation: `experiments/lora-transfer/runs/2026-08-08_165323/evaluation/step_01500/`
+- Verdict JSON: `experiments/lora-transfer/runs/2026-08-08_165323/checkpoints/gate_verdict.json`
+- Issue: [#17](https://github.com/timlawrenz/leica-look/issues/17)
 
 ---
 

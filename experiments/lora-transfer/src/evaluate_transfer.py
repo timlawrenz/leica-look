@@ -70,7 +70,8 @@ def extract_clip_embedding(model, processor, image: Image.Image, device) -> np.n
     """Extract CLIP ViT-L image embedding."""
     inputs = processor(images=image, return_tensors="pt").to(device)
     with torch.no_grad():
-        emb = model.get_image_features(**inputs).cpu().numpy()
+        out = model.get_image_features(**inputs)
+        emb = out.pooler_output.cpu().numpy()
     emb = emb / np.linalg.norm(emb, axis=-1, keepdims=True)
     return emb[0].astype(np.float32)
 
@@ -93,7 +94,7 @@ def extract_dinov2_attention(model, processor, image: Image.Image, device) -> np
 
     inputs = processor(images=image, return_tensors="pt").to(device)
     with torch.no_grad():
-        model(**inputs)
+        model(**inputs, output_attentions=True)
 
     handle.remove()
 
@@ -138,7 +139,8 @@ def load_input_images(transfer_dir: Path) -> list:
 
 
 def compute_gate_metrics(checkpoint_dir: Path, device: str = "cuda",
-                       color_baseline_path: Optional[Path] = None):
+                       color_baseline_path: Optional[Path] = None,
+                       transfer_dir: Optional[Path] = None):
     """Compute all three gate metrics from transfer outputs, plus held-out
     generalization check and color-baseline comparison.
 
@@ -150,12 +152,17 @@ def compute_gate_metrics(checkpoint_dir: Path, device: str = "cuda",
     import csv
 
     # Find latest evaluation
-    eval_dirs = sorted(checkpoint_dir.parent.glob("evaluation/step_*"))
-    if not eval_dirs:
-        print("No evaluation directories found!")
-        return None
-
-    eval_dir = eval_dirs[-1]  # latest
+    if transfer_dir is not None:
+        eval_dir = transfer_dir
+    else:
+        eval_dirs = sorted(checkpoint_dir.parent.glob("evaluation/step_*"))
+        if not eval_dirs:
+            # Also try one level up (evaluation is sibling of checkpoints/)
+            eval_dirs = sorted(checkpoint_dir.parent.parent.glob("evaluation/step_*"))
+        if not eval_dirs:
+            print("No evaluation directories found!")
+            return None
+        eval_dir = eval_dirs[-1]  # latest
     print(f"Evaluating: {eval_dir}")
 
     # Load images
@@ -184,7 +191,8 @@ def compute_gate_metrics(checkpoint_dir: Path, device: str = "cuda",
     for inp, trans in zip(input_imgs, transfer_imgs):
         pre_embs.append(extract_dinov2_embedding(dino_g_model, dino_g_processor, inp, device))
         # Convert transfer tensor back to PIL
-        trans_pil = T.ToPILImage()((trans * 0.5 + 0.5).clamp(0, 1))
+        trans_t = torch.from_numpy(trans) if isinstance(trans, np.ndarray) else trans
+        trans_pil = T.ToPILImage()((trans_t * 0.5 + 0.5).clamp(0, 1))
         post_embs.append(extract_dinov2_embedding(dino_g_model, dino_g_processor, trans_pil, device))
 
     pre_embs = np.array(pre_embs)
@@ -207,6 +215,7 @@ def compute_gate_metrics(checkpoint_dir: Path, device: str = "cuda",
     )
     dino_s_model = AutoModel.from_pretrained(
         "facebook/dinov2-small", cache_dir=str(HF_CACHE), local_files_only=True,
+        attn_implementation="eager",
     ).to(device).eval()
 
     from evaluation import center_edge_ratio
@@ -220,7 +229,8 @@ def compute_gate_metrics(checkpoint_dir: Path, device: str = "cuda",
             attn_map_pre = attn_map_pre / attn_map_pre.sum()
         pre_ratios.append(center_edge_ratio(attn_map_pre))
         # Transfer
-        trans_pil = T.ToPILImage()((trans * 0.5 + 0.5).clamp(0, 1))
+        trans_t = torch.from_numpy(trans) if isinstance(trans, np.ndarray) else trans
+        trans_pil = T.ToPILImage()((trans_t * 0.5 + 0.5).clamp(0, 1))
         attn_map_post = extract_dinov2_attention(dino_s_model, dino_s_processor, trans_pil, device)
         if attn_map_post.sum() > 0:
             attn_map_post = attn_map_post / attn_map_post.sum()
@@ -249,7 +259,8 @@ def compute_gate_metrics(checkpoint_dir: Path, device: str = "cuda",
     clip_post = []
     for inp, trans in zip(input_imgs, transfer_imgs):
         clip_pre.append(extract_clip_embedding(clip_model, clip_processor, inp, device))
-        trans_pil = T.ToPILImage()((trans * 0.5 + 0.5).clamp(0, 1))
+        trans_t = torch.from_numpy(trans) if isinstance(trans, np.ndarray) else trans
+        trans_pil = T.ToPILImage()((trans_t * 0.5 + 0.5).clamp(0, 1))
         clip_post.append(extract_clip_embedding(clip_model, clip_processor, trans_pil, device))
 
     clip_result = clip_image_similarity(np.array(clip_pre), np.array(clip_post))
@@ -350,7 +361,8 @@ def main():
     device = args.gpu if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}")
 
-    result = compute_gate_metrics(args.checkpoint, device, args.color_baseline)
+    result = compute_gate_metrics(args.checkpoint, device, args.color_baseline,
+                                 transfer_dir=args.transfer_dir)
 
     if result:
         output_path = args.checkpoint.parent / "gate_verdict.json"

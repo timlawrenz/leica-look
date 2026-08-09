@@ -6,15 +6,15 @@ Living map of active, planned, and concluded workstreams. Status tags: `[ACTIVE]
 
 ## Active
 
-* **[ACTIVE — PENDING HUMAN REVIEW] Phase 2a: LoRA Transfer Feasibility** (`experiments/lora-transfer/`)
-  * FLUX.1-dev LoRA (rank=32) on 270 Leica images with edge-weighted loss.
-  * Governance only — training blocked on human design review (issue #14).
-  * Pre-registered gate: DINOv2 embedding shift + attention C/E ratio + CLIP-I.
-  * See `experiments/lora-transfer/provenance.yaml` for full gate criteria.
-
 ---
 
 ## Concluded
+
+* **[CONCLUDED — FAIL] Phase 2a: LoRA Transfer Feasibility** (`experiments/lora-transfer/`)
+  * FLUX.1-dev LoRA (rank=32) on 230 Leica images, 1500 steps, edge-weighted loss.
+  * Gate verdict: FAIL (1/3 criteria met). No measurable embedding shift toward Leica centroid.
+  * CLIP-I preservation passed (0.90), but DINOv2 shift (-0.0008) and attention C/E (+0.014) failed.
+  * Effect indistinguishable from color-only baseline. See issue #17.
 
 * **[CONCLUDED — PIVOT] Phase 1: Discriminator Ablation Study** (issues #1–#8)
   * 7 models × 6 pooling × 3 classifiers × 3 sizes = 1,008 evaluations.
