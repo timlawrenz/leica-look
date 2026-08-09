@@ -162,8 +162,13 @@ class LeicaImageDataset(Dataset):
 
 
 def load_pipeline(rank: int = 32, alpha: int = 16, resume_ckpt: Optional[str] = None,
-                  dtype: torch.dtype = torch.float16):
+                  dtype: torch.dtype = torch.float16, device: Optional[torch.device] = None):
     """Load FLUX.1-dev pipeline and apply LoRA to transformer.
+
+    IMPORTANT (ROCm perf): do NOT call pipe.to(device, dtype) in one step —
+    the combined cast+move path does per-tensor HIP casts with sync and takes
+    ~2 min per component (measured: CLIP 123s for 0.2GB). Instead do a bulk
+    CPU dtype cast first (vectorized, ~0.5s), then a pure device move (~0.1s).
 
     If resume_ckpt is given, load the trainable PEFT adapter from that
     checkpoint dir (saved via transformer.save_pretrained) instead of
@@ -823,8 +828,17 @@ def main():
     resume_ckpt = args.resume
     if resume_ckpt:
         print(f"  (resume mode: loading adapter from {resume_ckpt})")
-    pipe = load_pipeline(args.rank, args.alpha, resume_ckpt=resume_ckpt, dtype=dtype)
-    pipe.to(device)
+    pipe = load_pipeline(args.rank, args.alpha, resume_ckpt=resume_ckpt, dtype=dtype, device=device)
+    # FAST PATH (ROCm): bulk CPU dtype cast (vectorized) then pure device move.
+    # DO NOT use pipe.to(device) alone — combined cast+move is ~250x slower.
+    if device.type != "cpu":
+        # Ensure any component not yet in `dtype` is bulk-cast on CPU first
+        for name in ("text_encoder", "text_encoder_2", "vae"):
+            comp = getattr(pipe, name, None)
+            if comp is not None and comp.dtype != dtype:
+                comp.to(dtype=dtype)
+        pipe.transformer.to(dtype=dtype)
+        pipe.to(device)
 
     # ---- Edge-weighted loss map ----
     print("\nGenerating edge-weighted loss map...")
