@@ -102,7 +102,11 @@ def edge_weighted_mse(
         Scalar loss if reduction='mean', else (B, C, H, W) per-element loss
     """
     # Per-element squared error: (B, C, H, W)
-    se = (pred - target) ** 2
+    # Compute in fp32 to prevent fp16 overflow of (pred-target)^2 — the
+    # low-noise timestep regime (sigma<0.2) produces large residuals that
+    # overflow fp16's max 65504 when squared, NaNing the loss (observed at
+    # step 5 with timestep ranges that include t<200).
+    se = (pred.float() - target.float()) ** 2
 
     # Broadcast spatial weights: (H, W) → (1, 1, H, W)
     w = weight_map.unsqueeze(0).unsqueeze(0).to(pred.device)
