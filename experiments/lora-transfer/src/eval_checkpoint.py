@@ -83,6 +83,8 @@ def main():
                     help="process a single user-supplied image (absolute path) instead of the registry eval set")
     ap.add_argument("--no-lora", action="store_true",
                     help="load base FLUX pipeline WITHOUT the adapter (control: same img2img, no LoRA)")
+    ap.add_argument("--seed", type=int, default=0,
+                    help="generator seed for the single-image path (must match training eval seed for A/B)")
     args = ap.parse_args()
 
     ckpt = Path(args.ckpt)
@@ -107,14 +109,15 @@ def main():
                          T.CenterCrop(1024), T.ToTensor(), T.Normalize([0.5], [0.5])])
         img = tfm(Image.open(img_path).convert("RGB"))
         name = img_path.stem
+        seed = getattr(args, 'seed', 0) if hasattr(args, 'seed') else 0
         try:
-            transfer = generate(pipe, img, seed=0)
+            transfer = generate(pipe, img, seed=seed)
             inp = (img.cpu() * 0.5 + 0.5).clamp(0, 1)
             trs = (transfer.cpu() * 0.5 + 0.5).clamp(0, 1)
             comp = torch.cat([inp, trs], dim=-1)
-            T.ToPILImage()(comp).save(outdir / f"{name}_step500.png")
-            T.ToPILImage()(trs).save(outdir / f"{name}_transfer_only.png")
-            print(f"Saved side-by-side + transfer-only for {name} -> {outdir}")
+            T.ToPILImage()(comp).save(outdir / f"{name}_seed{seed}_step500.png")
+            T.ToPILImage()(trs).save(outdir / f"{name}_seed{seed}_transfer_only.png")
+            print(f"Saved side-by-side + transfer-only for {name} (seed={seed}) -> {outdir}")
         except Exception as e:
             print(f"FAILED: {type(e).__name__}: {e}")
             import traceback; traceback.print_exc()
