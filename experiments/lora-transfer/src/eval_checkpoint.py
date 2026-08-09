@@ -81,13 +81,24 @@ def main():
     ap.add_argument("--out", default=None)
     ap.add_argument("--image", default=None,
                     help="process a single user-supplied image (absolute path) instead of the registry eval set")
+    ap.add_argument("--no-lora", action="store_true",
+                    help="load base FLUX pipeline WITHOUT the adapter (control: same img2img, no LoRA)")
     args = ap.parse_args()
 
     ckpt = Path(args.ckpt)
     outdir = Path(args.out) if args.out else ckpt.parent.parent / "evaluation" / ("single_" + Path(args.image).stem if args.image else "manual_step500")
     outdir.mkdir(parents=True, exist_ok=True)
 
-    pipe = load_pipeline_with_adapter(ckpt)
+    if args.no_lora:
+        print("CONTROL MODE: loading base FLUX.1-dev img2img WITHOUT LoRA")
+        from diffusers.pipelines.flux.pipeline_flux_img2img import FluxImg2ImgPipeline
+        pipe = FluxImg2ImgPipeline.from_pretrained(
+            "black-forest-labs/FLUX.1-dev", torch_dtype=torch.float16,
+            cache_dir=str(HF_CACHE), local_files_only=False)
+        pipe.to("cuda")
+        pipe.transformer.eval()
+    else:
+        pipe = load_pipeline_with_adapter(ckpt)
 
     if args.image:
         # Single user image
