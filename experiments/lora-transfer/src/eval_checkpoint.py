@@ -29,15 +29,17 @@ def load_pipeline_with_adapter(ckpt_dir, dtype=torch.float16, device="cuda"):
     from diffusers.pipelines.flux.pipeline_flux_img2img import FluxImg2ImgPipeline
     from peft import PeftModel
 
-    print(f"Loading FluxImg2ImgPipeline base (dtype={dtype})...")
+    print(f"Loading FluxImg2ImgPipeline base (final dtype={dtype})...")
+    # PROVEN-FAST LOAD (ROCm): load fp16 (fast), then bulk CPU-cast to the
+    # target dtype, then pure device move. Loading bf16 directly and calling
+    # .to(device) hits a slow per-tensor lazy-conversion path (~1.8GB/min).
+    # Measured: fp16 load + cpu cast + move = 48s for the full pipeline.
     pipe = FluxImg2ImgPipeline.from_pretrained(
         "black-forest-labs/FLUX.1-dev",
-        torch_dtype=dtype,
+        torch_dtype=torch.float16,
         cache_dir=str(HF_CACHE),
         local_files_only=False,
     )
-    # FAST PATH (ROCm): bulk CPU dtype cast then pure device move (combined
-    # .to(device, dtype) is ~250x slower — see train_lora.py).
     for name in ("text_encoder", "text_encoder_2", "vae", "transformer"):
         comp = getattr(pipe, name, None)
         if comp is not None and comp.dtype != dtype:
@@ -101,11 +103,15 @@ def main():
     outdir.mkdir(parents=True, exist_ok=True)
 
     if args.no_lora:
-        print(f"CONTROL MODE: loading base FLUX.1-dev img2img WITHOUT LoRA (dtype={args.dtype})")
+        print(f"CONTROL MODE: loading base FLUX.1-dev img2img WITHOUT LoRA (final dtype={args.dtype})")
         from diffusers.pipelines.flux.pipeline_flux_img2img import FluxImg2ImgPipeline
         pipe = FluxImg2ImgPipeline.from_pretrained(
-            "black-forest-labs/FLUX.1-dev", torch_dtype=dtype,
+            "black-forest-labs/FLUX.1-dev", torch_dtype=torch.float16,
             cache_dir=str(HF_CACHE), local_files_only=False)
+        for name in ("text_encoder", "text_encoder_2", "vae", "transformer"):
+            comp = getattr(pipe, name, None)
+            if comp is not None and comp.dtype != dtype:
+                comp.to(dtype=dtype)
         pipe.to("cuda")
         pipe.transformer.eval()
     else:
