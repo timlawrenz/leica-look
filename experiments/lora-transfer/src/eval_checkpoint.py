@@ -29,13 +29,19 @@ def load_pipeline_with_adapter(ckpt_dir, dtype=torch.float16, device="cuda"):
     from diffusers.pipelines.flux.pipeline_flux_img2img import FluxImg2ImgPipeline
     from peft import PeftModel
 
-    print("Loading FluxImg2ImgPipeline base...")
+    print(f"Loading FluxImg2ImgPipeline base (dtype={dtype})...")
     pipe = FluxImg2ImgPipeline.from_pretrained(
         "black-forest-labs/FLUX.1-dev",
         torch_dtype=dtype,
         cache_dir=str(HF_CACHE),
         local_files_only=False,
     )
+    # FAST PATH (ROCm): bulk CPU dtype cast then pure device move (combined
+    # .to(device, dtype) is ~250x slower — see train_lora.py).
+    for name in ("text_encoder", "text_encoder_2", "vae", "transformer"):
+        comp = getattr(pipe, name, None)
+        if comp is not None and comp.dtype != dtype:
+            comp.to(dtype=dtype)
     pipe.to(device)
 
     print(f"Loading LoRA adapter from {ckpt_dir}...")
@@ -85,22 +91,25 @@ def main():
                     help="load base FLUX pipeline WITHOUT the adapter (control: same img2img, no LoRA)")
     ap.add_argument("--seed", type=int, default=0,
                     help="generator seed for the single-image path (must match training eval seed for A/B)")
+    ap.add_argument("--dtype", choices=["fp16", "bf16"], default="fp16",
+                    help="base model dtype (match the training dtype of the checkpoint)")
     args = ap.parse_args()
 
     ckpt = Path(args.ckpt)
+    dtype = torch.bfloat16 if args.dtype == "bf16" else torch.float16
     outdir = Path(args.out) if args.out else ckpt.parent.parent / "evaluation" / ("single_" + Path(args.image).stem if args.image else "manual_step500")
     outdir.mkdir(parents=True, exist_ok=True)
 
     if args.no_lora:
-        print("CONTROL MODE: loading base FLUX.1-dev img2img WITHOUT LoRA")
+        print(f"CONTROL MODE: loading base FLUX.1-dev img2img WITHOUT LoRA (dtype={args.dtype})")
         from diffusers.pipelines.flux.pipeline_flux_img2img import FluxImg2ImgPipeline
         pipe = FluxImg2ImgPipeline.from_pretrained(
-            "black-forest-labs/FLUX.1-dev", torch_dtype=torch.float16,
+            "black-forest-labs/FLUX.1-dev", torch_dtype=dtype,
             cache_dir=str(HF_CACHE), local_files_only=False)
         pipe.to("cuda")
         pipe.transformer.eval()
     else:
-        pipe = load_pipeline_with_adapter(ckpt)
+        pipe = load_pipeline_with_adapter(ckpt, dtype=dtype)
 
     if args.image:
         # Single user image
