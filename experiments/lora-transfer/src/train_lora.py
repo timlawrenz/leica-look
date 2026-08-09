@@ -161,7 +161,8 @@ class LeicaImageDataset(Dataset):
 # ---------------------------------------------------------------------------
 
 
-def load_pipeline(rank: int = 32, alpha: int = 16, resume_ckpt: Optional[str] = None):
+def load_pipeline(rank: int = 32, alpha: int = 16, resume_ckpt: Optional[str] = None,
+                  dtype: torch.dtype = torch.float16):
     """Load FLUX.1-dev pipeline and apply LoRA to transformer.
 
     If resume_ckpt is given, load the trainable PEFT adapter from that
@@ -171,8 +172,7 @@ def load_pipeline(rank: int = 32, alpha: int = 16, resume_ckpt: Optional[str] = 
     from diffusers.pipelines.flux.pipeline_flux import FluxPipeline
     from peft import LoraConfig, get_peft_model, PeftModel
 
-    print("Loading FLUX.1-dev pipeline...")
-    dtype = torch.float16
+    print(f"Loading FLUX.1-dev pipeline (dtype={dtype})...")
 
     pipe = FluxPipeline.from_pretrained(
         "black-forest-labs/FLUX.1-dev",
@@ -332,6 +332,8 @@ def train_step(
     accum_step: int,
     prompt: str = DEFAULT_PROMPT,
     guidance_scale: float = 1.0,
+    t_min: int = 200,
+    t_max: int = 600,
 ) -> float:
     """
     Single training step: encode → pack → noise → denoise with LoRA → edge-weighted loss.
@@ -361,10 +363,11 @@ def train_step(
 
     # 5. Sample noise and timesteps
     noise = torch.randn_like(packed)
-    # Random timestep in a range that preserves structure while learning textures
-    # timestep 0 = no noise, 1000 = pure noise
-    # Train in range [200, 600] — enough noise for learning, not too much
-    t = torch.randint(200, 600, (B,), device=device)
+    # Random timestep in [t_min, t_max). v1 trained [200,600] (mid-noise) which
+    # left the low-noise fine-detail regime out-of-distribution at inference and
+    # produced a per-cell checkerboard artifact. Full-range [0,1000] matches
+    # standard FLUX LoRA training.
+    t = torch.randint(t_min, t_max, (B,), device=device)
     t_float = t.float() / 1000.0  # FLUX expects timestep/1000
 
     # Add noise via FLUX flow-matching: noisy = sigma*noise + (1-sigma)*sample,
@@ -490,6 +493,12 @@ def parse_args():
                         help="resume from this checkpoint dir (e.g. runs/.../checkpoints/step_00500)")
     parser.add_argument("--start-step", type=int, default=0,
                         help="global step to resume counting from (used with --resume)")
+    parser.add_argument("--timestep-min", type=int, default=200,
+                        help="min timestep sampled during training (v1 used 200; full-range retrain uses 0)")
+    parser.add_argument("--timestep-max", type=int, default=600,
+                        help="max timestep sampled during training (v1 used 600; full-range retrain uses 1000)")
+    parser.add_argument("--dtype", choices=["fp16", "bf16"], default="fp16",
+                        help="model dtype (v1 used fp16; retrain uses bf16 per FLUX convention)")
     return parser.parse_args()
 
 
@@ -562,7 +571,7 @@ def main():
 
     # Setup
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dtype = torch.float16
+    dtype = torch.bfloat16 if args.dtype == "bf16" else torch.float16
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
@@ -814,7 +823,7 @@ def main():
     resume_ckpt = args.resume
     if resume_ckpt:
         print(f"  (resume mode: loading adapter from {resume_ckpt})")
-    pipe = load_pipeline(args.rank, args.alpha, resume_ckpt=resume_ckpt)
+    pipe = load_pipeline(args.rank, args.alpha, resume_ckpt=resume_ckpt, dtype=dtype)
     pipe.to(device)
 
     # ---- Edge-weighted loss map ----
@@ -886,6 +895,8 @@ def main():
             device, dtype, grad_accum=args.grad_accum,
             accum_step=global_step,
             prompt=DEFAULT_PROMPT,
+            t_min=args.timestep_min,
+            t_max=args.timestep_max,
         )
 
         total_loss += loss
