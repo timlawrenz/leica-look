@@ -918,6 +918,18 @@ def main():
         pbar.update(1)
         pbar.set_postfix(loss=f"{loss:.4f}", lr=f"{lr_scheduler.get_last_lr()[0]:.2e}")
 
+        # NaN guard: fp16 overflow poisons AdamW permanently — stop immediately
+        # instead of wasting GPU time on a doomed run.
+        if not math.isfinite(loss):
+            print(f"\n  FATAL: loss={loss} at global_step {global_step} — fp16 overflow. Stopping.")
+            try:
+                subprocess.run(["python3", str(GPU_SCHEDULER), "release",
+                                "--gpu", args.gpu, "--job-id", args.job_id,
+                                "--status", "failed"], timeout=30, capture_output=True)
+            except Exception:
+                pass
+            sys.exit(3)
+
         # Heartbeat
         if global_step % 50 == 0:
             heartbeat(args.job_id, args.gpu, global_step)
