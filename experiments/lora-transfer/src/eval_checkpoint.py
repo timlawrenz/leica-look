@@ -121,8 +121,8 @@ def main():
         seed = getattr(args, 'seed', 0) if hasattr(args, 'seed') else 0
         try:
             transfer = generate(pipe, img, seed=seed)
-            inp = (img.cpu() * 0.5 + 0.5).clamp(0, 1)
-            trs = (transfer.cpu() * 0.5 + 0.5).clamp(0, 1)
+            inp = (img.cpu() * 0.5 + 0.5).clamp(0, 1).float()
+            trs = (transfer.cpu() * 0.5 + 0.5).clamp(0, 1).float()
             comp = torch.cat([inp, trs], dim=-1)
             T.ToPILImage()(comp).save(outdir / f"{name}_seed{seed}_step500.png")
             T.ToPILImage()(trs).save(outdir / f"{name}_seed{seed}_transfer_only.png")
@@ -140,8 +140,8 @@ def main():
     for i, (img, src) in enumerate(zip(imgs, paths)):
         try:
             transfer = generate(pipe, img, seed=42 + i)
-            inp = (img.cpu() * 0.5 + 0.5).clamp(0, 1)
-            trs = (transfer.cpu() * 0.5 + 0.5).clamp(0, 1)
+            inp = (img.cpu() * 0.5 + 0.5).clamp(0, 1).float()
+            trs = (transfer.cpu() * 0.5 + 0.5).clamp(0, 1).float()
             comp = torch.cat([inp, trs], dim=-1)
             T.ToPILImage()(comp).save(outdir / f"sample_{i:03d}.png")
             saved += 1
